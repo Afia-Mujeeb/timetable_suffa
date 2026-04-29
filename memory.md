@@ -64,6 +64,15 @@ Last updated: 2026-04-29
 - Added mobile diagnostics surfaces and tests for bootstrap fallback, offline startup, malformed cache recovery, reminder failure containment, refresh hardening, and the section-picker edge case where a previously saved section is no longer present.
 - Added Sprint 7 beta-readiness docs at `docs/operations/beta-release-checklist.md` and `docs/operations/beta-support-runbook.md`, then refreshed the admin runbook so operators know to inspect `GET /metrics` and react intentionally to `429` responses during release windows.
 
+## Sprint 8 outcome
+
+- Added validator-aware public read caching in `backend/worker-api`: `GET /v1/versions/current`, `GET /v1/sections`, `GET /v1/sections/:sectionCode`, and `GET /v1/sections/:sectionCode/timetable` now emit `ETag`, `Vary: If-None-Match`, and `x-timetable-version`, and they return `304 Not Modified` when the client already has the current published version payload.
+- Tightened the public timetable hot path so section detail lookup and published-version lookup are resolved together before timetable meetings are fetched, which keeps the common section timetable miss path query-cheap while letting validator hits stop after the metadata check.
+- Expanded shared Worker metrics with per-route request counts, p50/p95/p99 latency summaries, projected daily request-budget utilization, and named domain-event counters; the admin worker now records import, publish, rollback, and planned notification-section events, while the public worker records validator `not_modified` hits per route.
+- Reworked `mobile/app` caching around Sprint 8 scale assumptions: the selected timetable provider no longer drags the section list into every home-screen open, repository reads now use cache TTL plus HTTP `ETag` revalidation, and explicit refreshes still revalidate sections first so unchanged versions can skip the timetable fetch entirely.
+- Added Sprint 8 scale docs at `docs/operations/request-budget-model.md` and `docs/operations/scale-runbook.md`, then refreshed `docs/operations/worker-admin-runbook.md` so operators know which request-budget, latency, import-success, and notification-planning counters to inspect.
+- Expanded backend and Flutter tests to cover the new `ETag`/`304` behavior, mobile cache-validator reuse, and the updated home-screen request shape.
+
 ## Verified toolchain on this machine
 
 - Git `2.54.0.windows.1`
@@ -86,6 +95,8 @@ Last updated: 2026-04-29
 - The mobile app now records recent crash and runtime diagnostics locally, but there is still no remote crash-reporting SaaS wired in; beta monitoring currently depends on local diagnostics plus operator reproduction and backend logs/metrics.
 - Section-scoped push planning is now exposed through admin `pushPreview` responses, but actual Firebase device-topic subscription in `mobile/app` and outbound publish-time fan-out from the admin Worker are still not implemented because this repo still lacks the required Firebase client/runtime wiring and delivery credentials.
 - The current reminder implementation is intentionally active on Android and iOS only; non-mobile platforms fall back to a no-op reminder scheduler.
+- The new Sprint 8 request-budget and latency metrics are still per-Worker-instance in-memory approximations; they are good enough for free-tier trend detection, but they are not a durable multi-instance analytics system.
+- The mobile cache TTL is intentionally `30` minutes for both section metadata and selected timetable payloads, so passive users can continue seeing a previously validated timetable until the TTL expires or they trigger an explicit refresh.
 
 ## Verification commands that passed
 

@@ -57,6 +57,12 @@ describe("worker-api", () => {
     expect(response.headers.get("cache-control")).toBe(
       "public, max-age=60, s-maxage=300",
     );
+    expect(response.headers.get("etag")).toBe(
+      'W/"sections:spring-2026-2026-04-26"',
+    );
+    expect(response.headers.get("x-timetable-version")).toBe(
+      "spring-2026-2026-04-26",
+    );
 
     const body = (await response.json()) as {
       timetableVersion: {
@@ -107,6 +113,40 @@ describe("worker-api", () => {
       startTime: "08:30",
       courseName: "Object Oriented Programming",
     });
+    expect(response.headers.get("etag")).toBe(
+      'W/"section-timetable:spring-2026-2026-04-26:BS-CS-2A"',
+    );
+  });
+
+  it("returns 304 for section timetable reads when the client already has the current version", async () => {
+    const { d1 } = await createSeededTestDatabase();
+    const app = createApp();
+    const firstResponse = await app.request(
+      "http://localhost/v1/sections/BS-CS-2A/timetable",
+      undefined,
+      createEnv(d1),
+    );
+    const etag = firstResponse.headers.get("etag");
+
+    expect(firstResponse.status).toBe(200);
+    expect(etag).toBeTruthy();
+
+    const secondResponse = await app.request(
+      "http://localhost/v1/sections/BS-CS-2A/timetable",
+      {
+        headers: {
+          "if-none-match": etag ?? "",
+        },
+      },
+      createEnv(d1),
+    );
+
+    expect(secondResponse.status).toBe(304);
+    expect(secondResponse.headers.get("etag")).toBe(etag);
+    expect(secondResponse.headers.get("x-timetable-version")).toBe(
+      "spring-2026-2026-04-26",
+    );
+    await expect(secondResponse.text()).resolves.toBe("");
   });
 
   it("returns a structured 404 for unknown sections", async () => {
@@ -270,6 +310,12 @@ describe("worker-api", () => {
     );
     expect(metricsResponse.status).toBe(200);
     await expect(metricsResponse.json()).resolves.toMatchObject({
+      budget: {
+        workersDailyRequestLimit: 100000,
+      },
+      domainEvents: {
+        total: 0,
+      },
       environment: "test",
       service: "timetable-worker-api",
       errors: {
@@ -287,6 +333,14 @@ describe("worker-api", () => {
         },
       },
       requests: {
+        byRoute: {
+          "GET /v1/sections/%24/timetable": 2,
+          "GET /v1/sections/BS-CS-99Z/timetable": 1,
+        },
+        latencyMs: {
+          p95: expect.any(Number),
+          p99: expect.any(Number),
+        },
         total: 3,
         byStatus: {
           "400": 1,

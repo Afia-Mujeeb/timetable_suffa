@@ -219,6 +219,7 @@ class SectionsSnapshot {
   const SectionsSnapshot({
     required this.timetableVersion,
     required this.sections,
+    this.etag,
     this.isStale = false,
     this.cachedAt,
   });
@@ -244,6 +245,7 @@ class SectionsSnapshot {
           .whereType<JsonMap>()
           .map(SectionSummary.fromJson)
           .toList(growable: false),
+      etag: json["etag"] as String?,
       isStale: json["isStale"] as bool? ?? false,
       cachedAt: json["cachedAt"] as String?,
     );
@@ -251,18 +253,21 @@ class SectionsSnapshot {
 
   final TimetableVersion timetableVersion;
   final List<SectionSummary> sections;
+  final String? etag;
   final bool isStale;
   final String? cachedAt;
 
   SectionsSnapshot copyWith({
     TimetableVersion? timetableVersion,
     List<SectionSummary>? sections,
+    String? etag,
     bool? isStale,
     String? cachedAt,
   }) {
     return SectionsSnapshot(
       timetableVersion: timetableVersion ?? this.timetableVersion,
       sections: sections ?? this.sections,
+      etag: etag ?? this.etag,
       isStale: isStale ?? this.isStale,
       cachedAt: cachedAt ?? this.cachedAt,
     );
@@ -272,6 +277,7 @@ class SectionsSnapshot {
     return {
       "timetableVersion": timetableVersion.toJson(),
       "sections": sections.map((section) => section.toJson()).toList(),
+      "etag": etag,
       "isStale": isStale,
       "cachedAt": cachedAt,
     };
@@ -283,6 +289,7 @@ class SectionTimetable {
     required this.section,
     required this.timetableVersion,
     required this.meetings,
+    this.etag,
     this.isStale = false,
     this.cachedAt,
   });
@@ -314,6 +321,7 @@ class SectionTimetable {
           .whereType<JsonMap>()
           .map(TimetableMeeting.fromJson)
           .toList(growable: false),
+      etag: json["etag"] as String?,
       isStale: json["isStale"] as bool? ?? false,
       cachedAt: json["cachedAt"] as String?,
     );
@@ -322,6 +330,7 @@ class SectionTimetable {
   final SectionDetail section;
   final TimetableVersion timetableVersion;
   final List<TimetableMeeting> meetings;
+  final String? etag;
   final bool isStale;
   final String? cachedAt;
 
@@ -329,6 +338,7 @@ class SectionTimetable {
     SectionDetail? section,
     TimetableVersion? timetableVersion,
     List<TimetableMeeting>? meetings,
+    String? etag,
     bool? isStale,
     String? cachedAt,
   }) {
@@ -336,6 +346,7 @@ class SectionTimetable {
       section: section ?? this.section,
       timetableVersion: timetableVersion ?? this.timetableVersion,
       meetings: meetings ?? this.meetings,
+      etag: etag ?? this.etag,
       isStale: isStale ?? this.isStale,
       cachedAt: cachedAt ?? this.cachedAt,
     );
@@ -346,6 +357,7 @@ class SectionTimetable {
       "section": section.toJson(),
       "timetableVersion": timetableVersion.toJson(),
       "meetings": meetings.map((meeting) => meeting.toJson()).toList(),
+      "etag": etag,
       "isStale": isStale,
       "cachedAt": cachedAt,
     };

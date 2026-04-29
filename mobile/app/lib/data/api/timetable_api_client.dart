@@ -4,6 +4,18 @@ import "package:http/http.dart" as http;
 import "package:timetable_app/data/api/api_exception.dart";
 import "package:timetable_app/data/models/timetable_models.dart";
 
+class TimetableApiResult<T> {
+  const TimetableApiResult({
+    required this.notModified,
+    this.etag,
+    this.payload,
+  });
+
+  final bool notModified;
+  final String? etag;
+  final T? payload;
+}
+
 class TimetableApiClient {
   TimetableApiClient({
     required String baseUrl,
@@ -16,27 +28,75 @@ class TimetableApiClient {
   final String _baseUrl;
   final http.Client _httpClient;
 
-  Future<SectionsSnapshot> fetchSections() async {
-    final payload = await _getJson("/v1/sections");
+  Future<TimetableApiResult<SectionsSnapshot>> fetchSections({
+    String? ifNoneMatch,
+  }) async {
+    final response = await _getJson(
+      "/v1/sections",
+      ifNoneMatch: ifNoneMatch,
+    );
+    if (response.notModified) {
+      return TimetableApiResult(
+        notModified: true,
+        etag: response.etag,
+      );
+    }
 
-    return SectionsSnapshot.fromApiJson(payload);
+    return TimetableApiResult(
+      notModified: false,
+      etag: response.etag,
+      payload: SectionsSnapshot.fromApiJson(response.payload),
+    );
   }
 
-  Future<SectionTimetable> fetchSectionTimetable(String sectionCode) async {
+  Future<TimetableApiResult<SectionTimetable>> fetchSectionTimetable(
+    String sectionCode, {
+    String? ifNoneMatch,
+  }) async {
     final encodedSectionCode = Uri.encodeComponent(sectionCode);
-    final payload =
-        await _getJson("/v1/sections/$encodedSectionCode/timetable");
+    final response = await _getJson(
+      "/v1/sections/$encodedSectionCode/timetable",
+      ifNoneMatch: ifNoneMatch,
+    );
+    if (response.notModified) {
+      return TimetableApiResult(
+        notModified: true,
+        etag: response.etag,
+      );
+    }
 
-    return SectionTimetable.fromApiJson(payload);
+    return TimetableApiResult(
+      notModified: false,
+      etag: response.etag,
+      payload: SectionTimetable.fromApiJson(response.payload),
+    );
   }
 
-  Future<Map<String, dynamic>> _getJson(String path) async {
+  Future<
+      ({
+        String? etag,
+        bool notModified,
+        Map<String, dynamic> payload,
+      })> _getJson(
+    String path, {
+    String? ifNoneMatch,
+  }) async {
     final response = await _httpClient.get(
       Uri.parse("$_baseUrl$path"),
-      headers: const {
+      headers: {
         "accept": "application/json",
+        if (ifNoneMatch != null && ifNoneMatch.isNotEmpty)
+          "if-none-match": ifNoneMatch,
       },
     );
+
+    if (response.statusCode == 304) {
+      return (
+        etag: response.headers["etag"],
+        notModified: true,
+        payload: const <String, dynamic>{},
+      );
+    }
 
     final dynamic decoded = response.body.isEmpty
         ? const <String, dynamic>{}
@@ -57,6 +117,10 @@ class TimetableApiClient {
       );
     }
 
-    return payload;
+    return (
+      etag: response.headers["etag"],
+      notModified: false,
+      payload: payload,
+    );
   }
 }

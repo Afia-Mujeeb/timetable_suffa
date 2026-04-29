@@ -80,10 +80,49 @@ function getBindings(context: { env?: Bindings }): Bindings {
   return context.env ?? {};
 }
 
-function setReadCacheHeaders(context: {
-  header(name: string, value: string): void;
-}): void {
+function setReadCacheHeaders(
+  context: {
+    header(name: string, value: string): void;
+  },
+  input?: {
+    etag?: string;
+    versionId?: string;
+  },
+): void {
   context.header("Cache-Control", READ_CACHE_CONTROL);
+  context.header("Vary", "If-None-Match");
+  if (input?.etag) {
+    context.header("ETag", input.etag);
+  }
+  if (input?.versionId) {
+    context.header("x-timetable-version", input.versionId);
+  }
+}
+
+function createReadEtag(
+  scope: string,
+  versionId: string,
+  suffix?: string,
+): string {
+  const normalizedSuffix = suffix?.trim();
+  return normalizedSuffix
+    ? `W/"${scope}:${versionId}:${normalizedSuffix}"`
+    : `W/"${scope}:${versionId}"`;
+}
+
+function requestMatchesEtag(
+  context: { req: { header(name: string): string | undefined } },
+  etag: string,
+): boolean {
+  const headerValue = context.req.header("if-none-match");
+  if (!headerValue) {
+    return false;
+  }
+
+  return headerValue
+    .split(",")
+    .map((value) => value.trim())
+    .some((candidate) => candidate === "*" || candidate === etag);
 }
 
 function logEvent(payload: Record<string, unknown>): void {
@@ -379,7 +418,20 @@ export function createApp(dependencies: AppDependencies = {}): Hono<{
 
   app.get("/v1/versions/current", async (context) => {
     const service = new TimetableQueryService(getDatabase(context));
-    setReadCacheHeaders(context);
+    const version = await service.getCurrentVersionRecord();
+    const etag = createReadEtag("current-version", version.id);
+
+    setReadCacheHeaders(context, {
+      etag,
+      versionId: version.id,
+    });
+    if (requestMatchesEtag(context, etag)) {
+      metrics.recordDomainEvent({
+        name: "cache.not_modified.current_version",
+      });
+      return context.body(null, 304);
+    }
+
     return context.json(await service.getCurrentVersion());
   });
 
@@ -391,24 +443,69 @@ export function createApp(dependencies: AppDependencies = {}): Hono<{
 
   app.get("/v1/sections", async (context) => {
     const service = new TimetableQueryService(getDatabase(context));
-    setReadCacheHeaders(context);
-    return context.json(await service.listSections());
+    const version = await service.getCurrentVersionRecord();
+    const etag = createReadEtag("sections", version.id);
+
+    setReadCacheHeaders(context, {
+      etag,
+      versionId: version.id,
+    });
+    if (requestMatchesEtag(context, etag)) {
+      metrics.recordDomainEvent({
+        name: "cache.not_modified.sections",
+      });
+      return context.body(null, 304);
+    }
+
+    return context.json(await service.listSectionsForVersion(version));
   });
 
   app.get("/v1/sections/:sectionCode", async (context) => {
     const service = new TimetableQueryService(getDatabase(context));
-    setReadCacheHeaders(context);
-    return context.json(
-      await service.getSection(context.req.param("sectionCode")),
+    const sectionCode = context.req.param("sectionCode");
+    const lookup = await service.getPublishedSectionLookup(sectionCode);
+    const etag = createReadEtag(
+      "section-detail",
+      lookup.version.id,
+      lookup.section.normalizedCode,
     );
+
+    setReadCacheHeaders(context, {
+      etag,
+      versionId: lookup.version.id,
+    });
+    if (requestMatchesEtag(context, etag)) {
+      metrics.recordDomainEvent({
+        name: "cache.not_modified.section_detail",
+      });
+      return context.body(null, 304);
+    }
+
+    return context.json(service.getSectionFromLookup(lookup));
   });
 
   app.get("/v1/sections/:sectionCode/timetable", async (context) => {
     const service = new TimetableQueryService(getDatabase(context));
-    setReadCacheHeaders(context);
-    return context.json(
-      await service.getSectionTimetable(context.req.param("sectionCode")),
+    const sectionCode = context.req.param("sectionCode");
+    const lookup = await service.getPublishedSectionLookup(sectionCode);
+    const etag = createReadEtag(
+      "section-timetable",
+      lookup.version.id,
+      lookup.section.normalizedCode,
     );
+
+    setReadCacheHeaders(context, {
+      etag,
+      versionId: lookup.version.id,
+    });
+    if (requestMatchesEtag(context, etag)) {
+      metrics.recordDomainEvent({
+        name: "cache.not_modified.section_timetable",
+      });
+      return context.body(null, 304);
+    }
+
+    return context.json(await service.getSectionTimetableFromLookup(lookup));
   });
 
   return app;

@@ -33,6 +33,25 @@ type SectionRow = DatabaseRow & {
   active: number;
 };
 
+type PublishedSectionLookupRow = DatabaseRow & {
+  section_id: number;
+  code: string;
+  normalized_code: string;
+  display_name: string;
+  active: number;
+  section_meeting_count: number;
+  version_id: string;
+  version_source_file_name: string;
+  version_generated_date: string;
+  version_source_checksum: string;
+  version_publish_status: PublishStatus;
+  version_import_warnings_json: string;
+  version_section_count: number;
+  version_meeting_count: number;
+  version_created_at: string;
+  version_published_at: string | null;
+};
+
 type MeetingRow = DatabaseRow & {
   id: number;
   version_id: string;
@@ -140,6 +159,34 @@ function mapSection(row: SectionRow): SectionRecord {
     normalizedCode: row.normalized_code,
     displayName: row.display_name,
     active: row.active === 1,
+  };
+}
+
+function mapPublishedSectionLookup(row: PublishedSectionLookupRow): {
+  section: SectionRecord & { meetingCount: number };
+  version: TimetableVersionRecord;
+} {
+  return {
+    section: {
+      id: row.section_id,
+      code: row.code,
+      normalizedCode: row.normalized_code,
+      displayName: row.display_name,
+      active: row.active === 1,
+      meetingCount: Number(row.section_meeting_count),
+    },
+    version: {
+      id: row.version_id,
+      sourceFileName: row.version_source_file_name,
+      generatedDate: row.version_generated_date,
+      sourceChecksum: row.version_source_checksum,
+      publishStatus: row.version_publish_status,
+      importWarnings: parseJsonArray(row.version_import_warnings_json),
+      sectionCount: row.version_section_count,
+      meetingCount: row.version_meeting_count,
+      createdAt: row.version_created_at,
+      publishedAt: row.version_published_at,
+    },
   };
 }
 
@@ -517,6 +564,73 @@ export class SectionRepository {
         }
       : null;
   }
+
+  async getPublishedByNormalizedCode(normalizedCode: string): Promise<{
+    section: SectionRecord & { meetingCount: number };
+    version: TimetableVersionRecord;
+  } | null> {
+    const row = await this.database.queryFirst<PublishedSectionLookupRow>(
+      `WITH current_version AS (
+        SELECT
+          id,
+          source_file_name,
+          generated_date,
+          source_checksum,
+          publish_status,
+          import_warnings_json,
+          section_count,
+          meeting_count,
+          created_at,
+          published_at
+        FROM timetable_versions
+        WHERE publish_status = 'published'
+        ORDER BY published_at DESC, created_at DESC
+        LIMIT 1
+      )
+      SELECT
+        sections.id AS section_id,
+        sections.code,
+        sections.normalized_code,
+        sections.display_name,
+        sections.active,
+        COUNT(class_meetings.id) AS section_meeting_count,
+        current_version.id AS version_id,
+        current_version.source_file_name AS version_source_file_name,
+        current_version.generated_date AS version_generated_date,
+        current_version.source_checksum AS version_source_checksum,
+        current_version.publish_status AS version_publish_status,
+        current_version.import_warnings_json AS version_import_warnings_json,
+        current_version.section_count AS version_section_count,
+        current_version.meeting_count AS version_meeting_count,
+        current_version.created_at AS version_created_at,
+        current_version.published_at AS version_published_at
+      FROM current_version
+      INNER JOIN class_meetings
+        ON class_meetings.version_id = current_version.id
+      INNER JOIN sections
+        ON sections.id = class_meetings.section_id
+      WHERE sections.normalized_code = ?
+      GROUP BY
+        sections.id,
+        sections.code,
+        sections.normalized_code,
+        sections.display_name,
+        sections.active,
+        current_version.id,
+        current_version.source_file_name,
+        current_version.generated_date,
+        current_version.source_checksum,
+        current_version.publish_status,
+        current_version.import_warnings_json,
+        current_version.section_count,
+        current_version.meeting_count,
+        current_version.created_at,
+        current_version.published_at`,
+      [normalizedCode],
+    );
+
+    return row ? mapPublishedSectionLookup(row) : null;
+  }
 }
 
 export class CourseRepository {
@@ -861,7 +975,9 @@ export class ImportRunRepository {
     );
   }
 
-  async getLatestByVersionId(versionId: string): Promise<ImportRunRecord | null> {
+  async getLatestByVersionId(
+    versionId: string,
+  ): Promise<ImportRunRecord | null> {
     const row = await this.database.queryFirst<ImportRunRow>(
       `SELECT
         id,

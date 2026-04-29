@@ -42,8 +42,10 @@ void main() {
 
     final response = await client.fetchSections();
 
-    expect(response.timetableVersion.versionId, "spring-2026");
-    expect(response.sections.single.sectionCode, "BS-CS-2A");
+    expect(response.notModified, isFalse);
+    expect(response.payload, isNotNull);
+    expect(response.payload!.timetableVersion.versionId, "spring-2026");
+    expect(response.payload!.sections.single.sectionCode, "BS-CS-2A");
   });
 
   test("decodes the section timetable response shape", () async {
@@ -111,8 +113,38 @@ void main() {
 
     final response = await client.fetchSectionTimetable("BS-CS-2A");
 
-    expect(response.section.sectionCode, "BS-CS-2A");
-    expect(response.meetings.single.courseName, "Compiler Construction");
-    expect(response.meetings.single.dayKey, DayKey.monday);
+    expect(response.notModified, isFalse);
+    expect(response.payload, isNotNull);
+    expect(response.payload!.section.sectionCode, "BS-CS-2A");
+    expect(
+      response.payload!.meetings.single.courseName,
+      "Compiler Construction",
+    );
+    expect(response.payload!.meetings.single.dayKey, DayKey.monday);
+  });
+
+  test("sends If-None-Match and reports 304 responses", () async {
+    final client = TimetableApiClient(
+      baseUrl: "http://localhost:8787",
+      httpClient: MockClient((request) async {
+        expect(request.url.path, "/v1/sections");
+        expect(request.headers["if-none-match"], 'W/"sections:spring-2026"');
+        return http.Response(
+          "",
+          304,
+          headers: const {
+            "etag": 'W/"sections:spring-2026"',
+          },
+        );
+      }),
+    );
+
+    final response = await client.fetchSections(
+      ifNoneMatch: 'W/"sections:spring-2026"',
+    );
+
+    expect(response.notModified, isTrue);
+    expect(response.etag, 'W/"sections:spring-2026"');
+    expect(response.payload, isNull);
   });
 }

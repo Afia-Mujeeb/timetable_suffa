@@ -22,6 +22,7 @@ import type {
   SectionDetailResponse,
   SectionTimetableResponse,
   SectionsResponse,
+  TimetableVersionRecord,
   TimetableVersionResponse,
   VersionComparisonResult,
   VersionPreviewResponse,
@@ -55,7 +56,9 @@ type VersionActionInput = {
   ignoreWarnings: boolean;
 };
 
-function normalizeOptionalText(value: string | null | undefined): string | null {
+function normalizeOptionalText(
+  value: string | null | undefined,
+): string | null {
   const normalized = value?.trim();
   return normalized ? normalized : null;
 }
@@ -404,10 +407,15 @@ export class TimetableImportService {
   async publishVersion(input: VersionActionInput): Promise<PublishResult> {
     const version = await this.versions.getById(input.versionId);
     if (!version) {
-      throw new AppError("not_found", `Version ${input.versionId} does not exist.`);
+      throw new AppError(
+        "not_found",
+        `Version ${input.versionId} does not exist.`,
+      );
     }
 
-    const importRun = await this.importRuns.getLatestByVersionId(input.versionId);
+    const importRun = await this.importRuns.getLatestByVersionId(
+      input.versionId,
+    );
     if (!importRun || importRun.status !== "succeeded") {
       throw new AppError(
         "validation_error",
@@ -449,7 +457,8 @@ export class TimetableImportService {
         previousVersionId: previousVersion?.id ?? null,
         triggeredBy: normalizeOptionalText(input.triggeredBy),
         note: normalizeOptionalText(input.note),
-        warningsIgnored: version.importWarnings.length > 0 && input.ignoreWarnings,
+        warningsIgnored:
+          version.importWarnings.length > 0 && input.ignoreWarnings,
         changeSummary: changes.summary,
         createdAt: publishedAt,
       });
@@ -465,7 +474,9 @@ export class TimetableImportService {
 
     return {
       timetableVersion: toVersionResponse(publishedVersion),
-      previousVersion: previousVersion ? toVersionResponse(previousVersion) : null,
+      previousVersion: previousVersion
+        ? toVersionResponse(previousVersion)
+        : null,
       changes,
       pushPreview,
       auditEvent: toAuditEventResponse({
@@ -475,7 +486,8 @@ export class TimetableImportService {
         previousVersionId: previousVersion?.id ?? null,
         triggeredBy: normalizeOptionalText(input.triggeredBy),
         note: normalizeOptionalText(input.note),
-        warningsIgnored: version.importWarnings.length > 0 && input.ignoreWarnings,
+        warningsIgnored:
+          version.importWarnings.length > 0 && input.ignoreWarnings,
         changeSummary: changes.summary,
         createdAt: publishedAt,
       }),
@@ -485,7 +497,10 @@ export class TimetableImportService {
   async rollbackVersion(input: VersionActionInput): Promise<RollbackResult> {
     const version = await this.versions.getById(input.versionId);
     if (!version) {
-      throw new AppError("not_found", `Version ${input.versionId} does not exist.`);
+      throw new AppError(
+        "not_found",
+        `Version ${input.versionId} does not exist.`,
+      );
     }
 
     if (version.publishStatus !== "archived") {
@@ -495,7 +510,9 @@ export class TimetableImportService {
       );
     }
 
-    const importRun = await this.importRuns.getLatestByVersionId(input.versionId);
+    const importRun = await this.importRuns.getLatestByVersionId(
+      input.versionId,
+    );
     if (!importRun || importRun.status !== "succeeded") {
       throw new AppError(
         "validation_error",
@@ -525,7 +542,10 @@ export class TimetableImportService {
       );
     }
 
-    const changes = await this.compareVersions(currentVersion.id, input.versionId);
+    const changes = await this.compareVersions(
+      currentVersion.id,
+      input.versionId,
+    );
     const pushPreview = buildPushPreview(changes);
     const rolledBackAt = nowIso();
     const auditEventId = crypto.randomUUID();
@@ -541,7 +561,8 @@ export class TimetableImportService {
         previousVersionId: currentVersion.id,
         triggeredBy: normalizeOptionalText(input.triggeredBy),
         note: normalizeOptionalText(input.note),
-        warningsIgnored: version.importWarnings.length > 0 && input.ignoreWarnings,
+        warningsIgnored:
+          version.importWarnings.length > 0 && input.ignoreWarnings,
         changeSummary: changes.summary,
         createdAt: rolledBackAt,
       });
@@ -567,7 +588,8 @@ export class TimetableImportService {
         previousVersionId: currentVersion.id,
         triggeredBy: normalizeOptionalText(input.triggeredBy),
         note: normalizeOptionalText(input.note),
-        warningsIgnored: version.importWarnings.length > 0 && input.ignoreWarnings,
+        warningsIgnored:
+          version.importWarnings.length > 0 && input.ignoreWarnings,
         changeSummary: changes.summary,
         createdAt: rolledBackAt,
       }),
@@ -585,7 +607,8 @@ export class TimetableImportService {
       });
     }
 
-    const nextSnapshotPromise = this.meetings.listVersionSnapshot(nextVersionId);
+    const nextSnapshotPromise =
+      this.meetings.listVersionSnapshot(nextVersionId);
     const previousSnapshotPromise =
       previousVersionId === null
         ? Promise.resolve([])
@@ -634,7 +657,8 @@ export class TimetableAdminQueryService {
 
     const currentVersion = await this.versions.getCurrent();
     const importRun = await this.importRuns.getLatestByVersionId(versionId);
-    const sections = await this.sections.listByVersionWithMeetingCounts(versionId);
+    const sections =
+      await this.sections.listByVersionWithMeetingCounts(versionId);
     const changes =
       currentVersion?.id === versionId
         ? createEmptyVersionComparison({
@@ -678,7 +702,8 @@ export class TimetableAdminQueryService {
     previousVersionId: string | null,
     nextVersionId: string,
   ): Promise<VersionComparisonResult> {
-    const nextMeetingsPromise = this.meetings.listVersionSnapshot(nextVersionId);
+    const nextMeetingsPromise =
+      this.meetings.listVersionSnapshot(nextVersionId);
     const previousMeetingsPromise =
       previousVersionId === null
         ? Promise.resolve([])
@@ -708,7 +733,27 @@ export class TimetableQueryService {
     this.meetings = new ClassMeetingRepository(database);
   }
 
-  async getCurrentVersion(): Promise<TimetableVersionResponse> {
+  private buildSectionDetailResponse(input: {
+    section: Awaited<
+      ReturnType<SectionRepository["getActiveByNormalizedCode"]>
+    >;
+    version: TimetableVersionRecord;
+  }): SectionDetailResponse {
+    const section = input.section;
+    if (!section) {
+      throw new AppError("internal_error", "Section payload is missing.");
+    }
+
+    return {
+      sectionCode: section.code,
+      displayName: section.displayName,
+      active: section.active,
+      meetingCount: section.meetingCount,
+      timetableVersion: toVersionResponse(input.version),
+    };
+  }
+
+  async getCurrentVersionRecord(): Promise<TimetableVersionRecord> {
     const version = await this.versions.getCurrent();
     if (!version) {
       throw new AppError(
@@ -717,7 +762,11 @@ export class TimetableQueryService {
       );
     }
 
-    return toVersionResponse(version);
+    return version;
+  }
+
+  async getCurrentVersion(): Promise<TimetableVersionResponse> {
+    return toVersionResponse(await this.getCurrentVersionRecord());
   }
 
   async listVersions(): Promise<VersionsResponse> {
@@ -728,15 +777,15 @@ export class TimetableQueryService {
   }
 
   async listSections(): Promise<SectionsResponse> {
-    const version = await this.versions.getCurrent();
-    if (!version) {
-      throw new AppError(
-        "dependency_unavailable",
-        "No published timetable version is available.",
-      );
-    }
+    return this.listSectionsForVersion(await this.getCurrentVersionRecord());
+  }
 
-    const sections = await this.sections.listActiveWithMeetingCounts(version.id);
+  async listSectionsForVersion(
+    version: TimetableVersionRecord,
+  ): Promise<SectionsResponse> {
+    const sections = await this.sections.listActiveWithMeetingCounts(
+      version.id,
+    );
     return {
       timetableVersion: toVersionResponse(version),
       sections: sections.map((section) => ({
@@ -749,19 +798,21 @@ export class TimetableQueryService {
   }
 
   async getSection(sectionCode: string): Promise<SectionDetailResponse> {
+    return this.getSectionForVersion(
+      sectionCode,
+      await this.getCurrentVersionRecord(),
+    );
+  }
+
+  async getSectionForVersion(
+    sectionCode: string,
+    version: TimetableVersionRecord,
+  ): Promise<SectionDetailResponse> {
     const normalizedSectionCode = normalizeSectionCode(sectionCode);
     if (!isValidSectionCode(normalizedSectionCode)) {
       throw new AppError(
         "validation_error",
         `Section code ${sectionCode} is invalid.`,
-      );
-    }
-
-    const version = await this.versions.getCurrent();
-    if (!version) {
-      throw new AppError(
-        "dependency_unavailable",
-        "No published timetable version is available.",
       );
     }
 
@@ -776,31 +827,30 @@ export class TimetableQueryService {
       );
     }
 
-    return {
-      sectionCode: section.code,
-      displayName: section.displayName,
-      active: section.active,
-      meetingCount: section.meetingCount,
-      timetableVersion: toVersionResponse(version),
-    };
+    return this.buildSectionDetailResponse({
+      section,
+      version,
+    });
   }
 
   async getSectionTimetable(
     sectionCode: string,
+  ): Promise<SectionTimetableResponse> {
+    return this.getSectionTimetableForVersion(
+      sectionCode,
+      await this.getCurrentVersionRecord(),
+    );
+  }
+
+  async getSectionTimetableForVersion(
+    sectionCode: string,
+    version: TimetableVersionRecord,
   ): Promise<SectionTimetableResponse> {
     const normalizedSectionCode = normalizeSectionCode(sectionCode);
     if (!isValidSectionCode(normalizedSectionCode)) {
       throw new AppError(
         "validation_error",
         `Section code ${sectionCode} is invalid.`,
-      );
-    }
-
-    const version = await this.versions.getCurrent();
-    if (!version) {
-      throw new AppError(
-        "dependency_unavailable",
-        "No published timetable version is available.",
       );
     }
 
@@ -818,13 +868,10 @@ export class TimetableQueryService {
     const meetings = await this.meetings.listBySection(version.id, section.id);
 
     return {
-      section: {
-        sectionCode: section.code,
-        displayName: section.displayName,
-        active: section.active,
-        meetingCount: section.meetingCount,
-        timetableVersion: toVersionResponse(version),
-      },
+      section: this.buildSectionDetailResponse({
+        section,
+        version,
+      }),
       timetableVersion: toVersionResponse(version),
       meetings: meetings.map((meeting) => ({
         courseName: meeting.courseName,
@@ -841,5 +888,95 @@ export class TimetableQueryService {
         warnings: meeting.warnings,
       })),
     };
+  }
+
+  async getPublishedSectionLookup(sectionCode: string): Promise<{
+    section: {
+      id: number;
+      code: string;
+      normalizedCode: string;
+      displayName: string;
+      active: boolean;
+      meetingCount: number;
+    };
+    version: TimetableVersionRecord;
+  }> {
+    const normalizedSectionCode = normalizeSectionCode(sectionCode);
+    if (!isValidSectionCode(normalizedSectionCode)) {
+      throw new AppError(
+        "validation_error",
+        `Section code ${sectionCode} is invalid.`,
+      );
+    }
+
+    const lookup = await this.sections.getPublishedByNormalizedCode(
+      normalizedSectionCode,
+    );
+    if (!lookup) {
+      const currentVersion = await this.versions.getCurrent();
+      if (!currentVersion) {
+        throw new AppError(
+          "dependency_unavailable",
+          "No published timetable version is available.",
+        );
+      }
+
+      throw new AppError(
+        "not_found",
+        `Section ${normalizedSectionCode} was not found.`,
+      );
+    }
+
+    return lookup;
+  }
+
+  async getSectionTimetableFromLookup(input: {
+    section: {
+      id: number;
+      code: string;
+      normalizedCode: string;
+      displayName: string;
+      active: boolean;
+      meetingCount: number;
+    };
+    version: TimetableVersionRecord;
+  }): Promise<SectionTimetableResponse> {
+    const meetings = await this.meetings.listBySection(
+      input.version.id,
+      input.section.id,
+    );
+
+    return {
+      section: this.buildSectionDetailResponse(input),
+      timetableVersion: toVersionResponse(input.version),
+      meetings: meetings.map((meeting) => ({
+        courseName: meeting.courseName,
+        instructor: meeting.instructorName,
+        room: meeting.roomLabel,
+        day: meeting.dayLabel,
+        dayKey: meeting.dayKey,
+        startTime: meeting.startTime,
+        endTime: meeting.endTime,
+        meetingType: meeting.meetingType,
+        online: meeting.online,
+        sourcePage: meeting.sourcePage,
+        confidenceClass: meeting.confidenceClass,
+        warnings: meeting.warnings,
+      })),
+    };
+  }
+
+  getSectionFromLookup(input: {
+    section: {
+      id: number;
+      code: string;
+      normalizedCode: string;
+      displayName: string;
+      active: boolean;
+      meetingCount: number;
+    };
+    version: TimetableVersionRecord;
+  }): SectionDetailResponse {
+    return this.buildSectionDetailResponse(input);
   }
 }

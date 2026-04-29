@@ -81,10 +81,6 @@ void main() {
 
     expect(find.text("Today"), findsWidgets);
     expect(
-      find.textContaining("Showing cached section metadata"),
-      findsOneWidget,
-    );
-    expect(
       find.textContaining("Showing the last successful timetable sync"),
       findsOneWidget,
     );

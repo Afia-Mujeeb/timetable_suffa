@@ -34,8 +34,11 @@ The admin worker exposes `GET /metrics` for a lightweight operational snapshot.
 Review it during and after release windows to confirm:
 
 - request totals by final response status
+- request totals by route plus p50, p95, and p99 latency
 - error totals by error code and type
 - rate-limited traffic totals by rule
+- projected daily request usage versus the Workers free-tier budget
+- domain event counts for imports, publishes, rollbacks, and planned notification sections
 
 If operators see repeated `429` responses from admin endpoints, stop retrying blindly and inspect `/metrics` plus the worker logs before continuing.
 

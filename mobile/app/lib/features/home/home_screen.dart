@@ -13,7 +13,6 @@ class HomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final sectionsAsync = ref.watch(sectionsProvider);
     final timetableAsync = ref.watch(selectedSectionTimetableProvider);
 
     return Scaffold(
@@ -72,13 +71,6 @@ class HomeScreen extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 16),
-            if (sectionsAsync.valueOrNull?.isStale == true)
-              _CacheBanner(
-                icon: Icons.cloud_off_rounded,
-                message:
-                    "Showing cached section metadata because the latest refresh failed.",
-                cachedAt: sectionsAsync.valueOrNull?.cachedAt,
-              ),
             if (timetableAsync.valueOrNull?.isStale == true)
               _CacheBanner(
                 icon: Icons.wifi_off_rounded,
@@ -86,8 +78,7 @@ class HomeScreen extends ConsumerWidget {
                     "Showing the last successful timetable sync because the backend is unreachable.",
                 cachedAt: timetableAsync.valueOrNull?.cachedAt,
               ),
-            if (sectionsAsync.valueOrNull?.isStale == true ||
-                timetableAsync.valueOrNull?.isStale == true)
+            if (timetableAsync.valueOrNull?.isStale == true)
               const SizedBox(height: 16),
             timetableAsync.when(
               data: (timetable) {

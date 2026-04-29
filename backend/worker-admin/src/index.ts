@@ -289,6 +289,18 @@ function createRateLimitResponse(
   });
 }
 
+function recordAdminFailureMetric(input: {
+  metrics: ReturnType<typeof createWorkerMetrics>;
+  method: string;
+  path: string;
+}): void {
+  if (input.method === "POST" && input.path === "/v1/imports") {
+    input.metrics.recordDomainEvent({
+      name: "import.failed",
+    });
+  }
+}
+
 export function createApp(dependencies: AppDependencies = {}): Hono<{
   Bindings: Bindings;
   Variables: Variables;
@@ -473,6 +485,11 @@ export function createApp(dependencies: AppDependencies = {}): Hono<{
       status: appError.status,
       type: error instanceof Error ? error.name : "UnknownError",
     });
+    recordAdminFailureMetric({
+      metrics,
+      method,
+      path,
+    });
 
     return context.json(
       createStructuredErrorResponse(requestId, appError),
@@ -551,6 +568,9 @@ export function createApp(dependencies: AppDependencies = {}): Hono<{
       warningCount: result.warningCount,
       triggeredBy: result.importRun.triggeredBy,
     });
+    metrics.recordDomainEvent({
+      name: "import.succeeded",
+    });
 
     return context.json(
       {
@@ -609,6 +629,18 @@ export function createApp(dependencies: AppDependencies = {}): Hono<{
       auditEventId: result.auditEvent.auditEventId,
       triggeredBy: result.auditEvent.triggeredBy,
     });
+    metrics.recordDomainEvent({
+      name: "publish.succeeded",
+    });
+    if (result.pushPreview.wouldNotify) {
+      metrics.recordDomainEvent({
+        name: "publish.notifications_planned",
+      });
+    }
+    metrics.recordDomainEvent({
+      name: "publish.notification_sections",
+      value: result.pushPreview.sections.length,
+    });
 
     return context.json({
       requestId: getRequestId(context),
@@ -645,6 +677,18 @@ export function createApp(dependencies: AppDependencies = {}): Hono<{
       pushSections: result.pushPreview.sections.length,
       auditEventId: result.auditEvent.auditEventId,
       triggeredBy: result.auditEvent.triggeredBy,
+    });
+    metrics.recordDomainEvent({
+      name: "rollback.succeeded",
+    });
+    if (result.pushPreview.wouldNotify) {
+      metrics.recordDomainEvent({
+        name: "rollback.notifications_planned",
+      });
+    }
+    metrics.recordDomainEvent({
+      name: "rollback.notification_sections",
+      value: result.pushPreview.sections.length,
     });
 
     return context.json({

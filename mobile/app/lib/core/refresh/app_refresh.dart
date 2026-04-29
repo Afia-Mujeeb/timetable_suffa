@@ -1,5 +1,6 @@
 import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:timetable_app/core/providers/app_providers.dart";
+import "package:timetable_app/data/models/timetable_models.dart";
 
 class AppRefreshResult {
   const AppRefreshResult({
@@ -22,12 +23,12 @@ class AppRefreshResult {
 Future<AppRefreshResult> refreshSelectedSectionData(WidgetRef ref) async {
   var sectionsFailed = false;
   var timetableFailed = false;
-
-  ref.invalidate(sectionsProvider);
-  ref.invalidate(selectedSectionTimetableProvider);
+  SectionsSnapshot? refreshedSections;
+  SectionTimetable? refreshedTimetable;
+  final repository = ref.read(timetableRepositoryProvider);
 
   try {
-    await ref.read(sectionsProvider.future);
+    refreshedSections = await repository.fetchSections(forceRefresh: true);
   } catch (error, stackTrace) {
     sectionsFailed = true;
     await ref.read(appErrorMonitorProvider).recordError(
@@ -38,21 +39,28 @@ Future<AppRefreshResult> refreshSelectedSectionData(WidgetRef ref) async {
         );
   }
 
-  try {
-    await ref.read(selectedSectionTimetableProvider.future);
-  } catch (error, stackTrace) {
-    timetableFailed = true;
-    await ref.read(appErrorMonitorProvider).recordError(
-          error,
-          stackTrace,
-          source: "refresh.selected_timetable",
-          fatal: false,
-        );
+  final selectedSectionCode =
+      await ref.read(selectedSectionCodeControllerProvider.future);
+  if (selectedSectionCode != null && selectedSectionCode.isNotEmpty) {
+    try {
+      refreshedTimetable = await repository.fetchSectionTimetable(
+        selectedSectionCode,
+        forceRefresh: true,
+        latestVersionId: refreshedSections?.timetableVersion.versionId,
+      );
+    } catch (error, stackTrace) {
+      timetableFailed = true;
+      await ref.read(appErrorMonitorProvider).recordError(
+            error,
+            stackTrace,
+            source: "refresh.selected_timetable",
+            fatal: false,
+          );
+    }
   }
 
-  final refreshedSections = ref.read(sectionsProvider).valueOrNull;
-  final refreshedTimetable =
-      ref.read(selectedSectionTimetableProvider).valueOrNull;
+  ref.invalidate(sectionsProvider);
+  ref.invalidate(selectedSectionTimetableProvider);
 
   return AppRefreshResult(
     sectionsFailed: sectionsFailed,
@@ -64,11 +72,12 @@ Future<AppRefreshResult> refreshSelectedSectionData(WidgetRef ref) async {
 
 Future<AppRefreshResult> refreshSectionsData(WidgetRef ref) async {
   var sectionsFailed = false;
-
-  ref.invalidate(sectionsProvider);
+  SectionsSnapshot? refreshedSections;
 
   try {
-    await ref.read(sectionsProvider.future);
+    refreshedSections = await ref
+        .read(timetableRepositoryProvider)
+        .fetchSections(forceRefresh: true);
   } catch (error, stackTrace) {
     sectionsFailed = true;
     await ref.read(appErrorMonitorProvider).recordError(
@@ -79,7 +88,7 @@ Future<AppRefreshResult> refreshSectionsData(WidgetRef ref) async {
         );
   }
 
-  final refreshedSections = ref.read(sectionsProvider).valueOrNull;
+  ref.invalidate(sectionsProvider);
 
   return AppRefreshResult(
     sectionsFailed: sectionsFailed,
