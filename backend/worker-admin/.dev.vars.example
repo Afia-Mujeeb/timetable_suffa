@@ -1,3 +1,4 @@
 APP_NAME=timetable-worker-admin
 ADMIN_ENV=local
 IMPORT_SHARED_SECRET=replace-me
+TIMETABLE_DB=provided-by-wrangler-binding

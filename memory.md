@@ -15,6 +15,14 @@ Last updated: 2026-04-29
 - Documented parser assumptions and manual QA under `tools/pdf_parser/docs/`, including sampled 2nd, 4th, 6th, 8th, and MISC pages.
 - Parsed the April 26, 2026 timetable PDF into `25` structured pages and `162` normalized meetings with one expected validation warning for the `BS-CS-MISC 3` `Computer Networks` block missing a room line in the source PDF.
 
+## Sprint 2 outcome
+
+- Added a shared backend core under `backend/shared/` with the initial D1 migration, repository/service boundaries, parser-artifact import flow, publish flow, and a `sql.js`-backed D1-compatible test harness.
+- Expanded `backend/worker-api` into the first production backend slice with `GET /health`, `GET /ready`, `GET /v1/versions`, `GET /v1/versions/current`, `GET /v1/sections`, `GET /v1/sections/:sectionCode`, and `GET /v1/sections/:sectionCode/timetable`, plus structured error envelopes, request IDs, request-duration logging, and cache headers on read endpoints.
+- Expanded `backend/worker-admin` into the import/publish worker with `POST /v1/imports`, `POST /v1/versions/:versionId/publish`, `GET /ready`, optional `x-import-secret` protection for write routes, and a fixture import command at `backend/worker-admin/scripts/import-fixture.mjs`.
+- Updated both Wrangler configs to bind the shared `TIMETABLE_DB` D1 database and point at `backend/shared/migrations`, then refreshed the OpenAPI contracts in `contracts/openapi/worker-api.openapi.yaml` and `contracts/openapi/worker-admin.openapi.yaml`.
+- Added backend tests covering migration smoke, fixture import, repository hot-path timetable queries, service response assembly, route validation failures, and admin import/publish behavior.
+
 ## Verified toolchain on this machine
 
 - Git `2.54.0.windows.1`
@@ -31,6 +39,7 @@ Last updated: 2026-04-29
 
 - Android Studio is installed, but Android SDK setup and license acceptance still need to be completed before `flutter doctor` is fully green for Android.
 - The golden parser artifact still carries one known warning: `normalized_domain/meetings/160: missing room on non-online meeting`, which corresponds to `BS-CS-MISC 3` page `25` where the source PDF does not show a room line for `Computer Networks`.
+- The backend Workers now expect a real shared D1 database binding and, for protected admin writes, a real `IMPORT_SHARED_SECRET`; the committed Wrangler configs still use placeholder Cloudflare database IDs.
 
 ## Verification commands that passed
 
@@ -43,3 +52,9 @@ Last updated: 2026-04-29
 - `python -m pdf_parser validate --input "E:\timetable\tools\pdf_parser\fixtures\golden\spring-2026-2026-04-26.json"`
 - `flutter analyze`
 - `flutter test`
+- `pnpm --dir backend/worker-api test`
+- `pnpm --dir backend/worker-api typecheck`
+- `pnpm --dir backend/worker-api lint`
+- `pnpm --dir backend/worker-admin test`
+- `pnpm --dir backend/worker-admin typecheck`
+- `pnpm --dir backend/worker-admin lint`

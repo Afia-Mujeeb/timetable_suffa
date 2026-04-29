@@ -5,6 +5,8 @@
   "version": "0.1.0",
   "scripts": {
     "dev": "wrangler dev --port 8788",
+    "d1:migrate:local": "wrangler d1 migrations apply TIMETABLE_DB --local",
+    "import:fixture": "node ./scripts/import-fixture.mjs",
     "lint": "eslint src test --ext .ts",
     "test": "vitest run",
     "typecheck": "tsc --project tsconfig.json"

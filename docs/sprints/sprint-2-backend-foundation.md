@@ -157,6 +157,12 @@ Optional but useful:
 - `GET /v1/versions`
 - `GET /v1/sections/:sectionCode`
 
+Admin contract seed for Sprint 2:
+
+- `POST /v1/imports`
+- `POST /v1/versions/:versionId/publish`
+- `GET /ready`
+
 ### Response Design Principles
 
 - responses are JSON only

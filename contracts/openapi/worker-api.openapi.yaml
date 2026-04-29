@@ -1,34 +1,346 @@
 openapi: 3.1.0
 info:
   title: Timetable Worker API
-  version: 0.1.0
+  version: 0.2.0
+  description: |
+    Sprint 2 read contract for timetable metadata, section discovery, and section timetable retrieval.
 servers:
   - url: https://api.example.com
+tags:
+  - name: Operations
+  - name: Versions
+  - name: Sections
 paths:
-  /:
-    get:
-      operationId: getApiIndex
-      summary: Report the API shell status.
-      responses:
-        "200":
-          description: API shell response.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ServiceHealth"
   /health:
     get:
+      tags: [Operations]
       operationId: getApiHealth
-      summary: Report the API health status.
+      summary: Report worker liveness.
       responses:
         "200":
-          description: API health response.
+          description: The worker process is alive.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ServiceHealth"
+                $ref: "#/components/schemas/HealthResponse"
+  /ready:
+    get:
+      tags: [Operations]
+      operationId: getApiReadiness
+      summary: Report whether the API can serve read traffic.
+      responses:
+        "200":
+          description: The API is ready to serve requests.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessResponse"
+        "503":
+          description: A required dependency is unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/versions:
+    get:
+      tags: [Versions]
+      operationId: listTimetableVersions
+      summary: List known timetable versions.
+      responses:
+        "200":
+          description: Version list ordered from newest to oldest import.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VersionListResponse"
+        "500":
+          description: The version list could not be loaded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/versions/current:
+    get:
+      tags: [Versions]
+      operationId: getCurrentTimetableVersion
+      summary: Get the currently published timetable version.
+      responses:
+        "200":
+          description: The currently published timetable version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentVersionResponse"
+        "404":
+          description: No version has been published yet.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: The current version could not be loaded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/sections:
+    get:
+      tags: [Sections]
+      operationId: listSections
+      summary: List sections available in the current timetable version.
+      responses:
+        "200":
+          description: Section list for the published timetable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SectionListResponse"
+        "404":
+          description: No current version is available to resolve section data.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: The section list could not be loaded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/sections/{sectionCode}:
+    get:
+      tags: [Sections]
+      operationId: getSection
+      summary: Get metadata for a single section.
+      parameters:
+        - $ref: "#/components/parameters/SectionCode"
+      responses:
+        "200":
+          description: Section metadata for the current timetable version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SectionResponse"
+        "404":
+          description: The section code was not found in the current timetable version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: The section code path parameter is malformed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: The section detail could not be loaded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/sections/{sectionCode}/timetable:
+    get:
+      tags: [Sections]
+      operationId: getSectionTimetable
+      summary: Get the ordered timetable for a single section.
+      parameters:
+        - $ref: "#/components/parameters/SectionCode"
+      responses:
+        "200":
+          description: Ordered timetable meetings for the section in the current version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SectionTimetableResponse"
+        "404":
+          description: The section code was not found in the current timetable version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: The section code path parameter is malformed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: The section timetable could not be loaded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
+  parameters:
+    SectionCode:
+      name: sectionCode
+      in: path
+      required: true
+      description: >
+        Normalized section code. Encode spaces when present, for example `BS-CS-MISC%201`.
+      schema:
+        type: string
+        minLength: 3
+        maxLength: 32
+        pattern: "^[A-Z0-9 -]+$"
   schemas:
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+        - meta
+      properties:
+        data:
+          $ref: "#/components/schemas/ServiceHealth"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    ReadinessResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+        - meta
+      properties:
+        data:
+          $ref: "#/components/schemas/ServiceReadiness"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    VersionListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+        - meta
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/VersionSummary"
+        meta:
+          type: object
+          additionalProperties: false
+          required:
+            - requestId
+            - generatedAt
+            - count
+          properties:
+            requestId:
+              type: string
+            generatedAt:
+              type: string
+              format: date-time
+            count:
+              type: integer
+              minimum: 0
+    CurrentVersionResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+        - meta
+      properties:
+        data:
+          $ref: "#/components/schemas/VersionSummary"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    SectionListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+        - meta
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/SectionListItem"
+        meta:
+          type: object
+          additionalProperties: false
+          required:
+            - requestId
+            - generatedAt
+            - count
+            - version
+          properties:
+            requestId:
+              type: string
+            generatedAt:
+              type: string
+              format: date-time
+            count:
+              type: integer
+              minimum: 0
+            version:
+              $ref: "#/components/schemas/VersionSummary"
+    SectionResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+        - meta
+      properties:
+        data:
+          $ref: "#/components/schemas/SectionDetail"
+        meta:
+          type: object
+          additionalProperties: false
+          required:
+            - requestId
+            - generatedAt
+            - version
+          properties:
+            requestId:
+              type: string
+            generatedAt:
+              type: string
+              format: date-time
+            version:
+              $ref: "#/components/schemas/VersionSummary"
+    SectionTimetableResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+        - meta
+      properties:
+        data:
+          $ref: "#/components/schemas/SectionTimetable"
+        meta:
+          type: object
+          additionalProperties: false
+          required:
+            - requestId
+            - generatedAt
+            - version
+            - timezone
+          properties:
+            requestId:
+              type: string
+            generatedAt:
+              type: string
+              format: date-time
+            version:
+              $ref: "#/components/schemas/VersionSummary"
+            timezone:
+              type: string
+              description: IANA timezone for timetable interpretation.
+              example: Asia/Karachi
+    ResponseMeta:
+      type: object
+      additionalProperties: false
+      required:
+        - requestId
+        - generatedAt
+      properties:
+        requestId:
+          type: string
+          description: Correlation identifier emitted in logs and error paths.
+        generatedAt:
+          type: string
+          format: date-time
     ServiceHealth:
       type: object
       additionalProperties: false
@@ -43,4 +355,303 @@ components:
           type: string
           enum: [ok]
         environment:
+          type: string
+    ServiceReadiness:
+      type: object
+      additionalProperties: false
+      required:
+        - service
+        - status
+        - environment
+        - checks
+      properties:
+        service:
+          type: string
+        status:
+          type: string
+          enum: [ready, degraded]
+        environment:
+          type: string
+        checks:
+          type: array
+          items:
+            $ref: "#/components/schemas/DependencyCheck"
+    DependencyCheck:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - status
+      properties:
+        name:
+          type: string
+          enum: [d1, cache]
+        status:
+          type: string
+          enum: [ok, unavailable]
+        detail:
+          type: string
+    VersionSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - label
+        - sourceDate
+        - importedAt
+        - status
+        - isCurrent
+        - sectionCount
+        - meetingCount
+      properties:
+        id:
+          type: string
+          description: Stable server-generated identifier for the timetable version.
+        label:
+          type: string
+          description: Human-readable version label shown in operational tooling.
+        sourceDate:
+          type: string
+          format: date
+        importedAt:
+          type: string
+          format: date-time
+        publishedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        status:
+          type: string
+          enum: [draft, published, archived]
+        isCurrent:
+          type: boolean
+        checksum:
+          type:
+            - string
+            - "null"
+        sectionCount:
+          type: integer
+          minimum: 0
+        meetingCount:
+          type: integer
+          minimum: 0
+    SectionListItem:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - displayName
+        - isActive
+        - meetingCount
+      properties:
+        code:
+          type: string
+        displayName:
+          type: string
+        programCode:
+          type:
+            - string
+            - "null"
+        semesterLabel:
+          type:
+            - string
+            - "null"
+        isActive:
+          type: boolean
+        meetingCount:
+          type: integer
+          minimum: 0
+    SectionDetail:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - displayName
+        - isActive
+        - meetingCount
+      properties:
+        code:
+          type: string
+        displayName:
+          type: string
+        programCode:
+          type:
+            - string
+            - "null"
+        semesterLabel:
+          type:
+            - string
+            - "null"
+        isActive:
+          type: boolean
+        meetingCount:
+          type: integer
+          minimum: 0
+        notes:
+          type: array
+          items:
+            type: string
+    SectionTimetable:
+      type: object
+      additionalProperties: false
+      required:
+        - section
+        - meetings
+      properties:
+        section:
+          $ref: "#/components/schemas/SectionDetail"
+        meetings:
+          type: array
+          description: Ordered by day of week, then start time, then end time.
+          items:
+            $ref: "#/components/schemas/SectionMeeting"
+    SectionMeeting:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - dayOfWeek
+        - startTime
+        - endTime
+        - course
+        - isOnline
+        - sourcePage
+        - warnings
+      properties:
+        id:
+          type: string
+        dayOfWeek:
+          type: string
+          enum: [monday, tuesday, wednesday, thursday, friday, saturday, sunday]
+        startTime:
+          type: string
+          pattern: "^[0-2][0-9]:[0-5][0-9]$"
+          example: "08:30"
+        endTime:
+          type: string
+          pattern: "^[0-2][0-9]:[0-5][0-9]$"
+          example: "09:50"
+        meetingType:
+          type:
+            - string
+            - "null"
+          description: Lecture, lab, tutorial, or another parser-resolved type.
+        course:
+          $ref: "#/components/schemas/CourseDescriptor"
+        instructor:
+          oneOf:
+            - $ref: "#/components/schemas/InstructorDescriptor"
+            - type: "null"
+        room:
+          oneOf:
+            - $ref: "#/components/schemas/RoomDescriptor"
+            - type: "null"
+        isOnline:
+          type: boolean
+        sourcePage:
+          type: integer
+          minimum: 1
+        warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/MeetingWarning"
+    CourseDescriptor:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        code:
+          type:
+            - string
+            - "null"
+        name:
+          type: string
+    InstructorDescriptor:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+      properties:
+        id:
+          type:
+            - string
+            - "null"
+        name:
+          type: string
+    RoomDescriptor:
+      type: object
+      additionalProperties: false
+      required:
+        - label
+        - isOnline
+      properties:
+        id:
+          type:
+            - string
+            - "null"
+        label:
+          type: string
+        isOnline:
+          type: boolean
+    MeetingWarning:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          enum:
+            - parser_low_confidence
+            - inferred_duration
+            - inferred_room
+            - inferred_instructor
+        message:
+          type: string
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - error
+        - meta
+      properties:
+        error:
+          $ref: "#/components/schemas/ErrorBody"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    ErrorBody:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          enum:
+            - validation_error
+            - not_found
+            - import_conflict
+            - dependency_unavailable
+            - internal_error
+        message:
+          type: string
+        details:
+          type: array
+          items:
+            $ref: "#/components/schemas/ErrorDetail"
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required:
+        - issue
+      properties:
+        field:
+          type: string
+        resource:
+          type: string
+        issue:
           type: string

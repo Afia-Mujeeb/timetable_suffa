@@ -5,11 +5,16 @@
   "version": "0.1.0",
   "scripts": {
     "dev": "wrangler dev",
+    "d1:migrate:local": "wrangler d1 migrations apply TIMETABLE_DB --local",
     "lint": "eslint src test --ext .ts",
     "test": "vitest run",
     "typecheck": "tsc --project tsconfig.json"
   },
   "dependencies": {
     "hono": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/sql.js": "^1.4.11",
+    "sql.js": "^1.14.1"
   }
 }
