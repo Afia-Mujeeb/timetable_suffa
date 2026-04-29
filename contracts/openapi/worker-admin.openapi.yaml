@@ -1,0 +1,61 @@
+openapi: 3.1.0
+info:
+  title: Timetable Worker Admin API
+  version: 0.1.0
+servers:
+  - url: https://admin.example.com
+paths:
+  /health:
+    get:
+      operationId: getAdminHealth
+      summary: Report the admin worker health status.
+      responses:
+        "200":
+          description: Admin worker health response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceHealth"
+  /imports/status:
+    get:
+      operationId: getImportStatus
+      summary: Report the current import worker placeholder state.
+      responses:
+        "200":
+          description: Import status placeholder.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportStatus"
+components:
+  schemas:
+    ServiceHealth:
+      type: object
+      additionalProperties: false
+      required:
+        - service
+        - status
+        - environment
+      properties:
+        service:
+          type: string
+        status:
+          type: string
+          enum: [ok]
+        environment:
+          type: string
+    ImportStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - service
+        - status
+        - environment
+      properties:
+        service:
+          type: string
+        status:
+          type: string
+          enum: [idle]
+        environment:
+          type: string

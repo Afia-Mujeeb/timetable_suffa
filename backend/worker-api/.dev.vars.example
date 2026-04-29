@@ -1,0 +1,4 @@
+APP_NAME=timetable-worker-api
+API_ENV=local
+CLOUDFLARE_ACCOUNT_ID=replace-me
+CLOUDFLARE_D1_DATABASE_ID=replace-me

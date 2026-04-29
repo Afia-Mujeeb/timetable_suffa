@@ -1,0 +1,30 @@
+{
+  "name": "timetable",
+  "private": true,
+  "packageManager": "pnpm@10.0.0",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "format:check": "prettier --check . --ignore-unknown",
+    "format:write": "prettier --write . --ignore-unknown",
+    "lint:backend": "pnpm -r --filter @timetable/worker-api --filter @timetable/worker-admin lint",
+    "typecheck:backend": "pnpm -r --filter @timetable/worker-api --filter @timetable/worker-admin typecheck",
+    "test:backend": "pnpm -r --filter @timetable/worker-api --filter @timetable/worker-admin test",
+    "lint:parser": "python -m ruff check tools/pdf_parser",
+    "test:parser": "python -m pytest tools/pdf_parser",
+    "check:parser": "python -m ruff check tools/pdf_parser && python -m pytest tools/pdf_parser",
+    "check": "pnpm run format:check && pnpm run lint:backend && pnpm run typecheck:backend && pnpm run test:backend && pnpm run check:parser"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@types/node": "^24.0.0",
+    "eslint": "^9.0.0",
+    "globals": "^15.0.0",
+    "prettier": "^3.0.0",
+    "typescript": "^5.0.0",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^2.0.0",
+    "wrangler": "^4.0.0"
+  }
+}

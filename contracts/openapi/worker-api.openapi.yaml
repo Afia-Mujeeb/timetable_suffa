@@ -1,0 +1,46 @@
+openapi: 3.1.0
+info:
+  title: Timetable Worker API
+  version: 0.1.0
+servers:
+  - url: https://api.example.com
+paths:
+  /:
+    get:
+      operationId: getApiIndex
+      summary: Report the API shell status.
+      responses:
+        "200":
+          description: API shell response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceHealth"
+  /health:
+    get:
+      operationId: getApiHealth
+      summary: Report the API health status.
+      responses:
+        "200":
+          description: API health response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceHealth"
+components:
+  schemas:
+    ServiceHealth:
+      type: object
+      additionalProperties: false
+      required:
+        - service
+        - status
+        - environment
+      properties:
+        service:
+          type: string
+        status:
+          type: string
+          enum: [ok]
+        environment:
+          type: string

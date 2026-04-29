@@ -1,0 +1,15 @@
+{
+  "name": "@timetable/worker-admin",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "wrangler dev --port 8788",
+    "lint": "eslint src test --ext .ts",
+    "test": "vitest run",
+    "typecheck": "tsc --project tsconfig.json"
+  },
+  "dependencies": {
+    "hono": "^4.0.0"
+  }
+}

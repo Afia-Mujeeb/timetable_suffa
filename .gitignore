@@ -1,0 +1,39 @@
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Editor settings
+.idea/
+.vscode/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+.dev.vars
+
+# Node / pnpm
+node_modules/
+.pnpm-store/
+
+# Cloudflare / build output
+.wrangler/
+coverage/
+dist/
+
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+
+# Python
+.pytest_cache/
+.ruff_cache/
+.venv/
+__pycache__/
+*.py[cod]
+
+# Logs
+*.log
