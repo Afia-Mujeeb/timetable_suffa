@@ -47,6 +47,14 @@ Last updated: 2026-04-29
 - Added reminder-focused tests covering stable identifiers, coordinator resync behavior, repository-triggered rescheduling, cache-clear preference persistence, and the updated section-picker flow.
 - Added `docs/notifications/push-strategy.md` to document the low-volume section-topic FCM design and change-summary messaging rules that Sprint 6 can operationalize.
 
+## Sprint 6 outcome
+
+- Added `backend/shared/migrations/0002_admin_operations.sql` plus shared repository/service support for durable `import_runs` and `audit_events`, backfilled existing published history, and updated the shared test harness to apply every migration in lexical order.
+- Reworked the admin backend into an explicit CI-driven operations flow: `POST /v1/imports` now tracks import start/success/failure, `GET /v1/versions` and `GET /v1/versions/:versionId/preview` expose version history and pre-publish review data, `POST /v1/versions/:versionId/publish` requires explicit warning acknowledgement when needed, `POST /v1/versions/:versionId/rollback` makes rollback first-class, and `GET /v1/import-runs` plus `GET /v1/audit-events` expose the audit trail behind the shared-secret boundary.
+- Added version preview and publish-time notification planning data via `pushPreview`, so operators can see which changed sections would qualify for section-scoped pushes before publishing even though real Firebase delivery is still not wired.
+- Replaced the fixture-only admin helper with a general operator CLI at `backend/worker-admin/scripts/import-fixture.mjs`, added package scripts for import/preview/publish/rollback/history actions, wrote `docs/operations/worker-admin-runbook.md`, and refreshed `contracts/openapi/worker-admin.openapi.yaml` to match the current Sprint 6 runtime contract.
+- Expanded backend tests to cover migration smoke with the new tables, tracked imports, failed-import audit creation, preview-before-publish, warning-gated publish, rollback state transitions, and audit/history endpoints.
+
 ## Verified toolchain on this machine
 
 - Git `2.54.0.windows.1`
@@ -65,7 +73,7 @@ Last updated: 2026-04-29
 - The golden parser artifact still carries one known warning: `normalized_domain/meetings/160: missing room on non-online meeting`, which corresponds to `BS-CS-MISC 3` page `25` where the source PDF does not show a room line for `Computer Networks`.
 - The backend Workers now expect a real shared D1 database binding and, for protected admin writes, a real `IMPORT_SHARED_SECRET`; the committed Wrangler configs still use placeholder Cloudflare database IDs.
 - The mobile app defaults to `http://127.0.0.1:8787`; real runs still need the correct `API_BASE_URL` via `--dart-define`, and Android emulator runs should use `10.0.2.2` for a local Worker.
-- Section-scoped push delivery is still design-only in Sprint 5; the repo now defines the backend diff output and FCM topic strategy, but actual device subscription and publish-time fan-out remain Sprint 6 work.
+- Section-scoped push planning is now exposed through admin `pushPreview` responses, but actual Firebase device-topic subscription in `mobile/app` and outbound publish-time fan-out from the admin Worker are still not implemented because this repo still lacks the required Firebase client/runtime wiring and delivery credentials.
 - The current reminder implementation is intentionally active on Android and iOS only; non-mobile platforms fall back to a no-op reminder scheduler.
 
 ## Verification commands that passed
@@ -91,3 +99,10 @@ Last updated: 2026-04-29
 - `pnpm run lint:backend`
 - `pnpm run typecheck:backend`
 - `pnpm run test:backend`
+- `$env:PATH='C:\Program Files\nodejs;' + $env:PATH; & 'C:\Program Files\nodejs\corepack.cmd' pnpm --dir backend/worker-api lint`
+- `$env:PATH='C:\Program Files\nodejs;' + $env:PATH; & 'C:\Program Files\nodejs\corepack.cmd' pnpm --dir backend/worker-api typecheck`
+- `$env:PATH='C:\Program Files\nodejs;' + $env:PATH; & 'C:\Program Files\nodejs\corepack.cmd' pnpm --dir backend/worker-api test`
+- `$env:PATH='C:\Program Files\nodejs;' + $env:PATH; & 'C:\Program Files\nodejs\corepack.cmd' pnpm --dir backend/worker-admin lint`
+- `$env:PATH='C:\Program Files\nodejs;' + $env:PATH; & 'C:\Program Files\nodejs\corepack.cmd' pnpm --dir backend/worker-admin typecheck`
+- `$env:PATH='C:\Program Files\nodejs;' + $env:PATH; & 'C:\Program Files\nodejs\corepack.cmd' pnpm --dir backend/worker-admin test`
+- `& 'C:\Program Files\nodejs\node.exe' backend\worker-admin\scripts\import-fixture.mjs --help`

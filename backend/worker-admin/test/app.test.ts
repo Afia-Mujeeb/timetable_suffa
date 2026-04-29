@@ -28,22 +28,41 @@ async function createAdminEnv() {
 
 type AdminEnv = Awaited<ReturnType<typeof createAdminEnv>>;
 
+function createAuthorizedHeaders(extra: Record<string, string> = {}) {
+  return {
+    "x-import-secret": "test-secret",
+    ...extra,
+  };
+}
+
 async function requestImport(
   app: ReturnType<typeof createApp>,
   env: AdminEnv,
   artifact: ParserArtifact,
-  correlationId = `corr-import-${artifact.source.version_id}`,
+  overrides: {
+    triggeredBy?: string;
+    parserVersion?: string;
+    sourceId?: string;
+    note?: string | null;
+    correlationId?: string;
+  } = {},
 ) {
   return app.request(
     "http://localhost/v1/imports",
     {
       method: "POST",
-      headers: {
+      headers: createAuthorizedHeaders({
         "content-type": "application/json",
-        "x-import-secret": "test-secret",
-        "x-correlation-id": correlationId,
-      },
-      body: JSON.stringify(artifact),
+        "x-correlation-id":
+          overrides.correlationId ?? `corr-import-${artifact.source.version_id}`,
+      }),
+      body: JSON.stringify({
+        artifact,
+        sourceId: overrides.sourceId ?? `artifact:${artifact.source.version_id}`,
+        parserVersion: overrides.parserVersion ?? "parser-test-1",
+        triggeredBy: overrides.triggeredBy ?? "test-operator",
+        note: overrides.note ?? null,
+      }),
     },
     env,
   );
@@ -53,14 +72,85 @@ async function requestPublish(
   app: ReturnType<typeof createApp>,
   env: AdminEnv,
   versionId: string,
+  body: Record<string, unknown> | null = null,
 ) {
   return app.request(
     `http://localhost/v1/versions/${versionId}/publish`,
     {
       method: "POST",
-      headers: {
-        "x-import-secret": "test-secret",
-      },
+      headers: createAuthorizedHeaders(
+        body === null ? {} : { "content-type": "application/json" },
+      ),
+      body: body === null ? null : JSON.stringify(body),
+    },
+    env,
+  );
+}
+
+async function requestRollback(
+  app: ReturnType<typeof createApp>,
+  env: AdminEnv,
+  versionId: string,
+  body: Record<string, unknown> | null = null,
+) {
+  return app.request(
+    `http://localhost/v1/versions/${versionId}/rollback`,
+    {
+      method: "POST",
+      headers: createAuthorizedHeaders(
+        body === null ? {} : { "content-type": "application/json" },
+      ),
+      body: body === null ? null : JSON.stringify(body),
+    },
+    env,
+  );
+}
+
+async function requestPreview(
+  app: ReturnType<typeof createApp>,
+  env: AdminEnv,
+  versionId: string,
+) {
+  return app.request(
+    `http://localhost/v1/versions/${versionId}/preview`,
+    {
+      headers: createAuthorizedHeaders(),
+    },
+    env,
+  );
+}
+
+async function requestVersions(app: ReturnType<typeof createApp>, env: AdminEnv) {
+  return app.request(
+    "http://localhost/v1/versions",
+    {
+      headers: createAuthorizedHeaders(),
+    },
+    env,
+  );
+}
+
+async function requestImportRuns(
+  app: ReturnType<typeof createApp>,
+  env: AdminEnv,
+) {
+  return app.request(
+    "http://localhost/v1/import-runs",
+    {
+      headers: createAuthorizedHeaders(),
+    },
+    env,
+  );
+}
+
+async function requestAuditEvents(
+  app: ReturnType<typeof createApp>,
+  env: AdminEnv,
+) {
+  return app.request(
+    "http://localhost/v1/audit-events",
+    {
+      headers: createAuthorizedHeaders(),
     },
     env,
   );
@@ -136,17 +226,15 @@ describe("worker-admin", () => {
     });
   });
 
-  it("imports a parser artifact and publishes it", async () => {
+  it("imports, previews, publishes with warning acknowledgement, and exposes audit history", async () => {
     const app = createApp();
     const env = await createAdminEnv();
     const artifact = loadGoldenArtifact();
 
-    const importResponse = await requestImport(
-      app,
-      env,
-      artifact,
-      "corr-import-1",
-    );
+    const importResponse = await requestImport(app, env, artifact, {
+      note: "daily import",
+      correlationId: "corr-import-1",
+    });
 
     expect(importResponse.status).toBe(201);
     expect(await importResponse.json()).toMatchObject({
@@ -156,9 +244,65 @@ describe("worker-admin", () => {
         meetingsImported: 162,
         warningsCount: 1,
       },
+      importRun: {
+        versionId: "spring-2026-2026-04-26",
+        status: "succeeded",
+        parserVersion: "parser-test-1",
+        triggeredBy: "test-operator",
+        warningCount: 1,
+      },
       version: {
         versionId: "spring-2026-2026-04-26",
         publishStatus: "draft",
+      },
+    });
+
+    const previewResponse = await requestPreview(
+      app,
+      env,
+      "spring-2026-2026-04-26",
+    );
+
+    expect(previewResponse.status).toBe(200);
+    await expect(previewResponse.json()).resolves.toMatchObject({
+      version: {
+        versionId: "spring-2026-2026-04-26",
+        publishStatus: "draft",
+        warningCount: 1,
+      },
+      currentVersion: null,
+      importRun: {
+        status: "succeeded",
+      },
+      publishable: true,
+      warnings: [
+        "normalized_domain/meetings/160: missing room on non-online meeting",
+      ],
+      changes: {
+        fromVersionId: null,
+        toVersionId: "spring-2026-2026-04-26",
+        summary: {
+          sectionsCompared: 25,
+          sectionsChanged: 25,
+          totalChanges: 162,
+        },
+      },
+      pushPreview: {
+        wouldNotify: false,
+        reason: "first_publish",
+      },
+    });
+
+    const rejectedPublishResponse = await requestPublish(
+      app,
+      env,
+      "spring-2026-2026-04-26",
+    );
+
+    expect(rejectedPublishResponse.status).toBe(400);
+    await expect(rejectedPublishResponse.json()).resolves.toMatchObject({
+      error: {
+        code: "validation_error",
       },
     });
 
@@ -166,67 +310,72 @@ describe("worker-admin", () => {
       app,
       env,
       "spring-2026-2026-04-26",
+      {
+        triggeredBy: "release-bot",
+        note: "ship the weekly timetable",
+        ignoreWarnings: true,
+      },
     );
 
     expect(publishResponse.status).toBe(200);
-    const publishBody = (await publishResponse.json()) as {
-      previousVersion: unknown;
-      changes: {
-        fromVersionId: string | null;
-        summary: {
-          sectionsCompared: number;
-          sectionsChanged: number;
-          materialSections: number;
-          totalChanges: number;
-          addedCount: number;
-          removedCount: number;
-          modifiedCount: number;
-          materialChangeCount: number;
-        };
-        sections: Array<{
-          sectionCode: string;
-          changeCount: number;
-          addedCount: number;
-          removedCount: number;
-          modifiedCount: number;
-        }>;
-      };
-    };
-
-    expect(publishBody).toMatchObject({
+    await expect(publishResponse.json()).resolves.toMatchObject({
       version: {
         versionId: "spring-2026-2026-04-26",
         publishStatus: "published",
       },
       previousVersion: null,
-      changes: {
-        fromVersionId: null,
-        toVersionId: "spring-2026-2026-04-26",
-        summary: {
-          sectionsCompared: 25,
-          sectionsChanged: 25,
-          materialSections: 25,
-          totalChanges: 162,
-          addedCount: 162,
-          removedCount: 0,
-          modifiedCount: 0,
-          materialChangeCount: 162,
-        },
+      pushPreview: {
+        wouldNotify: false,
+        reason: "first_publish",
+      },
+      auditEvent: {
+        eventKind: "published",
+        versionId: "spring-2026-2026-04-26",
+        previousVersionId: null,
+        triggeredBy: "release-bot",
+        warningsIgnored: true,
       },
     });
-    expect(publishBody.changes.sections).toHaveLength(25);
-    expect(publishBody.changes.sections).toContainEqual(
-      expect.objectContaining({
-        sectionCode: "BS-CS-2A",
-        changeCount: 8,
-        addedCount: 8,
-        removedCount: 0,
-        modifiedCount: 0,
-      }),
-    );
+
+    const versionsResponse = await requestVersions(app, env);
+    expect(versionsResponse.status).toBe(200);
+    await expect(versionsResponse.json()).resolves.toMatchObject({
+      versions: [
+        expect.objectContaining({
+          versionId: "spring-2026-2026-04-26",
+          publishStatus: "published",
+        }),
+      ],
+    });
+
+    const importRunsResponse = await requestImportRuns(app, env);
+    expect(importRunsResponse.status).toBe(200);
+    await expect(importRunsResponse.json()).resolves.toMatchObject({
+      importRuns: [
+        expect.objectContaining({
+          versionId: "spring-2026-2026-04-26",
+          status: "succeeded",
+        }),
+      ],
+    });
+
+    const auditEventsResponse = await requestAuditEvents(app, env);
+    expect(auditEventsResponse.status).toBe(200);
+    await expect(auditEventsResponse.json()).resolves.toMatchObject({
+      auditEvents: [
+        expect.objectContaining({
+          eventKind: "published",
+          versionId: "spring-2026-2026-04-26",
+        }),
+        expect.objectContaining({
+          eventKind: "import_succeeded",
+          versionId: "spring-2026-2026-04-26",
+        }),
+      ],
+    });
   });
 
-  it("summarizes meaningful meeting changes across published versions", async () => {
+  it("summarizes meaningful meeting changes in preview and publish responses", async () => {
     const app = createApp();
     const env = await createAdminEnv();
     const initialArtifact = createArtifact("spring-2026-v1", [
@@ -277,19 +426,31 @@ describe("worker-admin", () => {
 
     expect((await requestImport(app, env, initialArtifact)).status).toBe(201);
     expect(
-      (await requestPublish(app, env, initialArtifact.source.version_id))
-        .status,
+      (
+        await requestPublish(app, env, initialArtifact.source.version_id, {
+          triggeredBy: "test-operator",
+          ignoreWarnings: false,
+        })
+      ).status,
     ).toBe(200);
     expect((await requestImport(app, env, nextArtifact)).status).toBe(201);
 
-    const publishResponse = await requestPublish(
+    const previewResponse = await requestPreview(
       app,
       env,
       nextArtifact.source.version_id,
     );
 
-    expect(publishResponse.status).toBe(200);
-    const publishBody = (await publishResponse.json()) as {
+    expect(previewResponse.status).toBe(200);
+    const previewBody = (await previewResponse.json()) as {
+      pushPreview: {
+        wouldNotify: boolean;
+        reason: string;
+        sections: Array<{
+          sectionCode: string;
+          messages: string[];
+        }>;
+      };
       changes: {
         summary: {
           sectionsCompared: number;
@@ -299,62 +460,71 @@ describe("worker-admin", () => {
           removedCount: number;
           modifiedCount: number;
         };
+      };
+    };
+
+    expect(previewBody.changes.summary).toMatchObject({
+      sectionsCompared: 3,
+      sectionsChanged: 3,
+      totalChanges: 3,
+      addedCount: 1,
+      removedCount: 1,
+      modifiedCount: 1,
+    });
+    expect(previewBody.pushPreview).toMatchObject({
+      wouldNotify: true,
+      reason: "sections_changed",
+    });
+    expect(previewBody.pushPreview.sections).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sectionCode: "SEC-B",
+        }),
+        expect.objectContaining({
+          sectionCode: "SEC-C",
+        }),
+      ]),
+    );
+
+    const publishResponse = await requestPublish(
+      app,
+      env,
+      nextArtifact.source.version_id,
+      {
+        triggeredBy: "release-bot",
+        note: "publish revision 2",
+      },
+    );
+
+    expect(publishResponse.status).toBe(200);
+    const publishBody = (await publishResponse.json()) as {
+      previousVersion: {
+        versionId: string;
+      } | null;
+      changes: {
         sections: Array<{
           sectionCode: string;
-          addedCount: number;
-          removedCount: number;
-          modifiedCount: number;
           changes: Array<{
             changeKinds: string[];
             message: string;
           }>;
         }>;
       };
+      pushPreview: {
+        wouldNotify: boolean;
+        sections: Array<{
+          sectionCode: string;
+        }>;
+      };
     };
 
-    expect(publishBody).toMatchObject({
-      version: {
-        versionId: "spring-2026-v2",
-        publishStatus: "published",
-      },
-      previousVersion: {
-        versionId: "spring-2026-v1",
-      },
-      changes: {
-        fromVersionId: "spring-2026-v1",
-        toVersionId: "spring-2026-v2",
-        summary: {
-          sectionsCompared: 3,
-          sectionsChanged: 3,
-          materialSections: 3,
-          totalChanges: 3,
-          addedCount: 1,
-          removedCount: 1,
-          modifiedCount: 1,
-          materialChangeCount: 3,
-        },
-        sections: [
-          {
-            sectionCode: "SEC-A",
-            addedCount: 0,
-            removedCount: 1,
-            modifiedCount: 0,
-          },
-          {
-            sectionCode: "SEC-B",
-            addedCount: 0,
-            removedCount: 0,
-            modifiedCount: 1,
-          },
-          {
-            sectionCode: "SEC-C",
-            addedCount: 1,
-            removedCount: 0,
-            modifiedCount: 0,
-          },
-        ],
-      },
+    expect(publishBody.previousVersion).toMatchObject({
+      versionId: "spring-2026-v1",
     });
+    expect(publishBody.pushPreview).toMatchObject({
+      wouldNotify: true,
+    });
+    expect(publishBody.pushPreview.sections).toHaveLength(3);
 
     const updatedSection = publishBody.changes.sections.find(
       (section) => section.sectionCode === "SEC-B",
@@ -369,10 +539,155 @@ describe("worker-admin", () => {
     expect(updatedSection?.changes[0]?.message).toContain("moved");
   });
 
-  it("rejects admin writes when the import secret is wrong", async () => {
+  it("rolls back to an archived version and records the rollback audit event", async () => {
+    const app = createApp();
+    const env = await createAdminEnv();
+    const v1 = createArtifact("spring-2026-v1", [
+      createTestMeeting({
+        section: "SEC-A",
+        course_name: "Algorithms",
+      }),
+    ]);
+    const v2 = createArtifact("spring-2026-v2", [
+      createTestMeeting({
+        section: "SEC-A",
+        course_name: "Algorithms",
+        day: "Tuesday",
+        day_key: "tuesday",
+      }),
+    ]);
+
+    expect((await requestImport(app, env, v1)).status).toBe(201);
+    expect(
+      (
+        await requestPublish(app, env, v1.source.version_id, {
+          triggeredBy: "release-bot",
+        })
+      ).status,
+    ).toBe(200);
+    expect((await requestImport(app, env, v2)).status).toBe(201);
+    expect(
+      (
+        await requestPublish(app, env, v2.source.version_id, {
+          triggeredBy: "release-bot",
+        })
+      ).status,
+    ).toBe(200);
+
+    const rollbackResponse = await requestRollback(app, env, v1.source.version_id, {
+      triggeredBy: "release-bot",
+      note: "rollback bad publish",
+    });
+
+    expect(rollbackResponse.status).toBe(200);
+    await expect(rollbackResponse.json()).resolves.toMatchObject({
+      version: {
+        versionId: "spring-2026-v1",
+        publishStatus: "published",
+      },
+      previousVersion: {
+        versionId: "spring-2026-v2",
+      },
+      auditEvent: {
+        eventKind: "rolled_back",
+        versionId: "spring-2026-v1",
+        previousVersionId: "spring-2026-v2",
+        triggeredBy: "release-bot",
+      },
+      pushPreview: {
+        wouldNotify: true,
+        reason: "sections_changed",
+      },
+    });
+
+    const previewResponse = await requestPreview(app, env, v1.source.version_id);
+    expect(previewResponse.status).toBe(200);
+    await expect(previewResponse.json()).resolves.toMatchObject({
+      version: {
+        versionId: "spring-2026-v1",
+        publishStatus: "published",
+      },
+      currentVersion: {
+        versionId: "spring-2026-v1",
+      },
+    });
+
+    const auditEventsResponse = await requestAuditEvents(app, env);
+    expect(auditEventsResponse.status).toBe(200);
+    const auditEventsBody = (await auditEventsResponse.json()) as {
+      auditEvents: Array<{
+        eventKind: string;
+        versionId: string | null;
+      }>;
+    };
+    expect(auditEventsBody.auditEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          eventKind: "rolled_back",
+          versionId: "spring-2026-v1",
+        }),
+      ]),
+    );
+  });
+
+  it("records failed imports in import runs and audit events", async () => {
     const app = createApp();
     const env = await createAdminEnv();
     const response = await app.request(
+      "http://localhost/v1/imports",
+      {
+        method: "POST",
+        headers: createAuthorizedHeaders({
+          "content-type": "application/json",
+        }),
+        body: JSON.stringify({
+          artifact: {},
+          sourceId: "artifact:broken",
+          parserVersion: "parser-test-1",
+          triggeredBy: "test-operator",
+        }),
+      },
+      env,
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: {
+        code: "validation_error",
+      },
+    });
+
+    const importRunsResponse = await requestImportRuns(app, env);
+    expect(importRunsResponse.status).toBe(200);
+    await expect(importRunsResponse.json()).resolves.toMatchObject({
+      importRuns: [
+        expect.objectContaining({
+          versionId: null,
+          sourceId: "artifact:broken",
+          status: "failed",
+        }),
+      ],
+    });
+
+    const auditEventsResponse = await requestAuditEvents(app, env);
+    expect(auditEventsResponse.status).toBe(200);
+    const auditBody = (await auditEventsResponse.json()) as {
+      auditEvents: Array<{
+        eventKind: string;
+        note: string | null;
+      }>;
+    };
+    expect(auditBody.auditEvents[0]).toMatchObject({
+      eventKind: "import_failed",
+    });
+    expect(auditBody.auditEvents[0]?.note).toContain("Import payload is invalid");
+  });
+
+  it("rejects admin reads and writes when the import secret is wrong", async () => {
+    const app = createApp();
+    const env = await createAdminEnv();
+
+    const writeResponse = await app.request(
       "http://localhost/v1/imports",
       {
         method: "POST",
@@ -384,12 +699,17 @@ describe("worker-admin", () => {
       },
       env,
     );
+    expect(writeResponse.status).toBe(400);
 
-    expect(response.status).toBe(400);
-    await expect(response.json()).resolves.toMatchObject({
-      error: {
-        code: "validation_error",
+    const readResponse = await app.request(
+      "http://localhost/v1/versions",
+      {
+        headers: {
+          "x-import-secret": "wrong-secret",
+        },
       },
-    });
+      env,
+    );
+    expect(readResponse.status).toBe(400);
   });
 });

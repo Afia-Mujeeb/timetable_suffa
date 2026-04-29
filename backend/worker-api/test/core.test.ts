@@ -34,8 +34,10 @@ describe("shared timetable core", () => {
 
     expect(tables.map((table) => table.name)).toEqual(
       expect.arrayContaining([
+        "audit_events",
         "class_meetings",
         "courses",
+        "import_runs",
         "instructors",
         "rooms",
         "sections",
@@ -49,7 +51,13 @@ describe("shared timetable core", () => {
     await applySharedMigrations(client);
     const service = new TimetableImportService(client);
 
-    const result = await service.importArtifact(loadGoldenArtifact());
+    const result = await service.importArtifact({
+      artifact: loadGoldenArtifact(),
+      sourceId: "test-fixture",
+      parserVersion: "test-parser",
+      triggeredBy: "test-suite",
+      note: null,
+    });
 
     expect(result).toMatchObject({
       importedSections: 25,
@@ -72,8 +80,19 @@ describe("shared timetable core", () => {
     await applySharedMigrations(client);
     const importService = new TimetableImportService(client);
     const artifact = loadGoldenArtifact();
-    await importService.importArtifact(artifact);
-    await importService.publishVersion(artifact.source.version_id);
+    await importService.importArtifact({
+      artifact,
+      sourceId: "test-fixture",
+      parserVersion: "test-parser",
+      triggeredBy: "test-suite",
+      note: null,
+    });
+    await importService.publishVersion({
+      versionId: artifact.source.version_id,
+      triggeredBy: "test-suite",
+      note: null,
+      ignoreWarnings: true,
+    });
 
     const sections = new SectionRepository(client);
     const section = await sections.getActiveByNormalizedCode(

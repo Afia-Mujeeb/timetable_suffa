@@ -12,6 +12,12 @@ export type DayKey = (typeof DAY_ORDER)[number];
 export type ConfidenceClass = "high" | "medium" | "low";
 export type MeetingType = "lecture" | "lab";
 export type PublishStatus = "draft" | "published" | "archived";
+export type ImportRunStatus = "running" | "succeeded" | "failed";
+export type AuditEventKind =
+  | "import_succeeded"
+  | "import_failed"
+  | "published"
+  | "rolled_back";
 
 export type ParserValidation = {
   status: "passed" | "failed";
@@ -65,6 +71,33 @@ export type TimetableVersionRecord = {
   meetingCount: number;
   createdAt: string;
   publishedAt: string | null;
+};
+
+export type ImportRunRecord = {
+  id: string;
+  versionId: string | null;
+  sourceFileName: string | null;
+  sourceId: string | null;
+  parserVersion: string | null;
+  triggeredBy: string | null;
+  status: ImportRunStatus;
+  warningCount: number;
+  warnings: string[];
+  errorMessage: string | null;
+  startedAt: string;
+  completedAt: string | null;
+};
+
+export type AuditEventRecord = {
+  id: string;
+  eventKind: AuditEventKind;
+  versionId: string | null;
+  previousVersionId: string | null;
+  triggeredBy: string | null;
+  note: string | null;
+  warningsIgnored: boolean;
+  changeSummary: VersionChangeSummary | null;
+  createdAt: string;
 };
 
 export type SectionRecord = {
@@ -218,15 +251,95 @@ export type VersionsResponse = {
   versions: TimetableVersionResponse[];
 };
 
+export type VersionSectionSummaryResponse = {
+  sectionCode: string;
+  displayName: string;
+  meetingCount: number;
+};
+
+export type ImportRunResponse = {
+  importRunId: string;
+  versionId: string | null;
+  sourceFileName: string | null;
+  sourceId: string | null;
+  parserVersion: string | null;
+  triggeredBy: string | null;
+  status: ImportRunStatus;
+  warningCount: number;
+  warnings: string[];
+  errorMessage: string | null;
+  startedAt: string;
+  completedAt: string | null;
+};
+
+export type AuditEventResponse = {
+  auditEventId: string;
+  eventKind: AuditEventKind;
+  versionId: string | null;
+  previousVersionId: string | null;
+  triggeredBy: string | null;
+  note: string | null;
+  warningsIgnored: boolean;
+  changeSummary: VersionChangeSummary | null;
+  createdAt: string;
+};
+
+export type ImportRunsResponse = {
+  importRuns: ImportRunResponse[];
+};
+
+export type AuditEventsResponse = {
+  auditEvents: AuditEventResponse[];
+};
+
+export type PushSectionPreview = {
+  sectionCode: string;
+  displayName: string;
+  messageCount: number;
+  messages: string[];
+};
+
+export type PushPreviewResponse = {
+  wouldNotify: boolean;
+  reason:
+    | "first_publish"
+    | "no_material_changes"
+    | "sections_changed"
+    | "current_version";
+  sections: PushSectionPreview[];
+};
+
+export type VersionPreviewResponse = {
+  version: TimetableVersionResponse;
+  currentVersion: TimetableVersionResponse | null;
+  importRun: ImportRunResponse | null;
+  warnings: string[];
+  sections: VersionSectionSummaryResponse[];
+  changes: VersionComparisonResult;
+  pushPreview: PushPreviewResponse;
+  publishable: boolean;
+};
+
 export type ImportResult = {
   timetableVersion: TimetableVersionResponse;
   importedSections: number;
   importedMeetings: number;
   warningCount: number;
+  importRun: ImportRunResponse;
 };
 
 export type PublishResult = {
   timetableVersion: TimetableVersionResponse;
   previousVersion: TimetableVersionResponse | null;
   changes: VersionComparisonResult;
+  pushPreview: PushPreviewResponse;
+  auditEvent: AuditEventResponse;
+};
+
+export type RollbackResult = {
+  timetableVersion: TimetableVersionResponse;
+  previousVersion: TimetableVersionResponse | null;
+  changes: VersionComparisonResult;
+  pushPreview: PushPreviewResponse;
+  auditEvent: AuditEventResponse;
 };

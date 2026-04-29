@@ -1,9 +1,14 @@
 import type { DatabaseClient, DatabaseRow } from "./db";
 import type {
+  AuditEventKind,
+  AuditEventRecord,
+  ImportRunRecord,
+  ImportRunStatus,
   MeetingRecord,
   PublishStatus,
   SectionRecord,
   TimetableVersionRecord,
+  VersionChangeSummary,
   VersionMeetingSnapshot,
 } from "./types";
 
@@ -69,11 +74,48 @@ type VersionMeetingSnapshotRow = DatabaseRow & {
   warnings_json: string;
 };
 
+type ImportRunRow = DatabaseRow & {
+  id: string;
+  version_id: string | null;
+  source_file_name: string | null;
+  source_id: string | null;
+  parser_version: string | null;
+  triggered_by: string | null;
+  status: ImportRunStatus;
+  warning_count: number;
+  warnings_json: string;
+  error_message: string | null;
+  started_at: string;
+  completed_at: string | null;
+};
+
+type AuditEventRow = DatabaseRow & {
+  id: string;
+  event_kind: AuditEventKind;
+  version_id: string | null;
+  previous_version_id: string | null;
+  triggered_by: string | null;
+  note: string | null;
+  warnings_ignored: number;
+  change_summary_json: string | null;
+  created_at: string;
+};
+
 function parseJsonArray(value: string): string[] {
   const parsed = JSON.parse(value) as unknown;
   return Array.isArray(parsed)
     ? parsed.filter((item): item is string => typeof item === "string")
     : [];
+}
+
+function parseNullableSummaryJson(
+  value: string | null,
+): VersionChangeSummary | null {
+  if (value === null) {
+    return null;
+  }
+
+  return JSON.parse(value) as VersionChangeSummary;
 }
 
 function mapVersion(row: VersionRow): TimetableVersionRecord {
@@ -145,6 +187,37 @@ function mapVersionMeetingSnapshot(
     sourcePage: row.source_page,
     confidenceClass: row.confidence_class,
     warnings: parseJsonArray(row.warnings_json),
+  };
+}
+
+function mapImportRun(row: ImportRunRow): ImportRunRecord {
+  return {
+    id: row.id,
+    versionId: row.version_id,
+    sourceFileName: row.source_file_name,
+    sourceId: row.source_id,
+    parserVersion: row.parser_version,
+    triggeredBy: row.triggered_by,
+    status: row.status,
+    warningCount: Number(row.warning_count),
+    warnings: parseJsonArray(row.warnings_json),
+    errorMessage: row.error_message,
+    startedAt: row.started_at,
+    completedAt: row.completed_at,
+  };
+}
+
+function mapAuditEvent(row: AuditEventRow): AuditEventRecord {
+  return {
+    id: row.id,
+    eventKind: row.event_kind,
+    versionId: row.version_id,
+    previousVersionId: row.previous_version_id,
+    triggeredBy: row.triggered_by,
+    note: row.note,
+    warningsIgnored: row.warnings_ignored === 1,
+    changeSummary: parseNullableSummaryJson(row.change_summary_json),
+    createdAt: row.created_at,
   };
 }
 
@@ -350,6 +423,37 @@ export class SectionRepository {
   }
 
   async listActiveWithMeetingCounts(
+    versionId: string,
+  ): Promise<Array<SectionRecord & { meetingCount: number }>> {
+    const rows = await this.database.queryAll<
+      SectionRow &
+        DatabaseRow & {
+          meeting_count: number;
+        }
+    >(
+      `SELECT
+        sections.id,
+        sections.code,
+        sections.normalized_code,
+        sections.display_name,
+        sections.active,
+        COUNT(class_meetings.id) AS meeting_count
+      FROM sections
+      INNER JOIN class_meetings
+        ON class_meetings.section_id = sections.id
+      WHERE class_meetings.version_id = ?
+      GROUP BY sections.id, sections.code, sections.normalized_code, sections.display_name, sections.active
+      ORDER BY sections.code ASC`,
+      [versionId],
+    );
+
+    return rows.map((row) => ({
+      ...mapSection(row),
+      meetingCount: Number(row.meeting_count),
+    }));
+  }
+
+  async listByVersionWithMeetingCounts(
     versionId: string,
   ): Promise<Array<SectionRecord & { meetingCount: number }>> {
     const rows = await this.database.queryAll<
@@ -655,5 +759,214 @@ export class ClassMeetingRepository {
     );
 
     return rows.map(mapVersionMeetingSnapshot);
+  }
+}
+
+export class ImportRunRepository {
+  constructor(private readonly database: DatabaseClient) {}
+
+  async create(record: {
+    id: string;
+    versionId: string | null;
+    sourceFileName: string | null;
+    sourceId: string | null;
+    parserVersion: string | null;
+    triggeredBy: string | null;
+    startedAt: string;
+  }): Promise<void> {
+    await this.database.run(
+      `INSERT INTO import_runs (
+        id,
+        version_id,
+        source_file_name,
+        source_id,
+        parser_version,
+        triggered_by,
+        status,
+        warning_count,
+        warnings_json,
+        error_message,
+        started_at,
+        completed_at
+      ) VALUES (?, ?, ?, ?, ?, ?, 'running', 0, '[]', NULL, ?, NULL)`,
+      [
+        record.id,
+        record.versionId,
+        record.sourceFileName,
+        record.sourceId,
+        record.parserVersion,
+        record.triggeredBy,
+        record.startedAt,
+      ],
+    );
+  }
+
+  async markSucceeded(record: {
+    id: string;
+    versionId: string;
+    sourceFileName: string;
+    warnings: string[];
+    completedAt: string;
+  }): Promise<void> {
+    await this.database.run(
+      `UPDATE import_runs
+      SET
+        version_id = ?,
+        source_file_name = ?,
+        status = 'succeeded',
+        warning_count = ?,
+        warnings_json = ?,
+        error_message = NULL,
+        completed_at = ?
+      WHERE id = ?`,
+      [
+        record.versionId,
+        record.sourceFileName,
+        record.warnings.length,
+        JSON.stringify(record.warnings),
+        record.completedAt,
+        record.id,
+      ],
+    );
+  }
+
+  async markFailed(record: {
+    id: string;
+    versionId: string | null;
+    sourceFileName: string | null;
+    warnings: string[];
+    errorMessage: string;
+    completedAt: string;
+  }): Promise<void> {
+    await this.database.run(
+      `UPDATE import_runs
+      SET
+        version_id = ?,
+        source_file_name = COALESCE(?, source_file_name),
+        status = 'failed',
+        warning_count = ?,
+        warnings_json = ?,
+        error_message = ?,
+        completed_at = ?
+      WHERE id = ?`,
+      [
+        record.versionId,
+        record.sourceFileName,
+        record.warnings.length,
+        JSON.stringify(record.warnings),
+        record.errorMessage,
+        record.completedAt,
+        record.id,
+      ],
+    );
+  }
+
+  async getLatestByVersionId(versionId: string): Promise<ImportRunRecord | null> {
+    const row = await this.database.queryFirst<ImportRunRow>(
+      `SELECT
+        id,
+        version_id,
+        source_file_name,
+        source_id,
+        parser_version,
+        triggered_by,
+        status,
+        warning_count,
+        warnings_json,
+        error_message,
+        started_at,
+        completed_at
+      FROM import_runs
+      WHERE version_id = ?
+      ORDER BY started_at DESC, id DESC
+      LIMIT 1`,
+      [versionId],
+    );
+
+    return row ? mapImportRun(row) : null;
+  }
+
+  async listAll(): Promise<ImportRunRecord[]> {
+    const rows = await this.database.queryAll<ImportRunRow>(
+      `SELECT
+        id,
+        version_id,
+        source_file_name,
+        source_id,
+        parser_version,
+        triggered_by,
+        status,
+        warning_count,
+        warnings_json,
+        error_message,
+        started_at,
+        completed_at
+      FROM import_runs
+      ORDER BY started_at DESC, id DESC`,
+    );
+
+    return rows.map(mapImportRun);
+  }
+}
+
+export class AuditEventRepository {
+  constructor(private readonly database: DatabaseClient) {}
+
+  async create(record: {
+    id: string;
+    eventKind: AuditEventKind;
+    versionId: string | null;
+    previousVersionId: string | null;
+    triggeredBy: string | null;
+    note: string | null;
+    warningsIgnored: boolean;
+    changeSummary: VersionChangeSummary | null;
+    createdAt: string;
+  }): Promise<void> {
+    await this.database.run(
+      `INSERT INTO audit_events (
+        id,
+        event_kind,
+        version_id,
+        previous_version_id,
+        triggered_by,
+        note,
+        warnings_ignored,
+        change_summary_json,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        record.id,
+        record.eventKind,
+        record.versionId,
+        record.previousVersionId,
+        record.triggeredBy,
+        record.note,
+        record.warningsIgnored ? 1 : 0,
+        record.changeSummary === null
+          ? null
+          : JSON.stringify(record.changeSummary),
+        record.createdAt,
+      ],
+    );
+  }
+
+  async listAll(): Promise<AuditEventRecord[]> {
+    const rows = await this.database.queryAll<AuditEventRow>(
+      `SELECT
+        id,
+        event_kind,
+        version_id,
+        previous_version_id,
+        triggered_by,
+        note,
+        warnings_ignored,
+        change_summary_json,
+        created_at
+      FROM audit_events
+      ORDER BY created_at DESC, id DESC`,
+    );
+
+    return rows.map(mapAuditEvent);
   }
 }

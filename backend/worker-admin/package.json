@@ -4,9 +4,17 @@
   "type": "module",
   "version": "0.1.0",
   "scripts": {
+    "admin": "node ./scripts/import-fixture.mjs",
+    "admin:audit-events": "node ./scripts/import-fixture.mjs audit-events",
+    "admin:import": "node ./scripts/import-fixture.mjs import",
+    "admin:import-runs": "node ./scripts/import-fixture.mjs import-runs",
+    "admin:preview": "node ./scripts/import-fixture.mjs preview",
+    "admin:publish": "node ./scripts/import-fixture.mjs publish",
+    "admin:rollback": "node ./scripts/import-fixture.mjs rollback",
+    "admin:versions": "node ./scripts/import-fixture.mjs versions",
     "dev": "wrangler dev --port 8788",
     "d1:migrate:local": "wrangler d1 migrations apply TIMETABLE_DB --local",
-    "import:fixture": "node ./scripts/import-fixture.mjs",
+    "import:fixture": "node ./scripts/import-fixture.mjs import",
     "lint": "eslint src test --ext .ts",
     "test": "vitest run",
     "typecheck": "tsc --project tsconfig.json"

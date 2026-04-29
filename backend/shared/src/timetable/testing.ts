@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -85,10 +85,7 @@ export class SqlJsDatabaseClient implements DatabaseClient {
 }
 
 const CURRENT_DIRECTORY = dirname(fileURLToPath(import.meta.url));
-const MIGRATION_PATH = resolve(
-  CURRENT_DIRECTORY,
-  "../../migrations/0001_initial.sql",
-);
+const MIGRATIONS_DIRECTORY = resolve(CURRENT_DIRECTORY, "../../migrations");
 
 export async function createTestDatabase(): Promise<{
   client: DatabaseClient;
@@ -103,6 +100,12 @@ export async function createTestDatabase(): Promise<{
 export async function applySharedMigrations(
   database: DatabaseClient,
 ): Promise<void> {
-  const sql = readFileSync(MIGRATION_PATH, "utf8");
-  await database.exec(sql);
+  const migrationFiles = readdirSync(MIGRATIONS_DIRECTORY)
+    .filter((file) => file.endsWith(".sql"))
+    .sort((left, right) => left.localeCompare(right));
+
+  for (const file of migrationFiles) {
+    const sql = readFileSync(resolve(MIGRATIONS_DIRECTORY, file), "utf8");
+    await database.exec(sql);
+  }
 }

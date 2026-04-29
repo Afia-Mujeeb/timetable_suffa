@@ -25,8 +25,19 @@ export async function createSeededTestDatabase(): Promise<{
   await applySharedMigrations(client);
   const importService = new TimetableImportService(client);
   const artifact = loadGoldenArtifact();
-  await importService.importArtifact(artifact);
-  await importService.publishVersion(artifact.source.version_id);
+  await importService.importArtifact({
+    artifact,
+    sourceId: "test-fixture",
+    parserVersion: "test-parser",
+    triggeredBy: "test-suite",
+    note: null,
+  });
+  await importService.publishVersion({
+    versionId: artifact.source.version_id,
+    triggeredBy: "test-suite",
+    note: null,
+    ignoreWarnings: true,
+  });
   const d1 = createD1Bridge(database);
   return {
     d1,

@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto";
 
 import type {
+  AuditEventRecord,
+  AuditEventResponse,
   DayKey,
+  ImportRunRecord,
+  ImportRunResponse,
   ParserArtifact,
   TimetableVersionRecord,
   TimetableVersionResponse,
@@ -60,6 +64,39 @@ export function toVersionResponse(
     warningCount: record.importWarnings.length,
     createdAt: record.createdAt,
     publishedAt: record.publishedAt,
+  };
+}
+
+export function toImportRunResponse(record: ImportRunRecord): ImportRunResponse {
+  return {
+    importRunId: record.id,
+    versionId: record.versionId,
+    sourceFileName: record.sourceFileName,
+    sourceId: record.sourceId,
+    parserVersion: record.parserVersion,
+    triggeredBy: record.triggeredBy,
+    status: record.status,
+    warningCount: record.warnings.length,
+    warnings: record.warnings,
+    errorMessage: record.errorMessage,
+    startedAt: record.startedAt,
+    completedAt: record.completedAt,
+  };
+}
+
+export function toAuditEventResponse(
+  record: AuditEventRecord,
+): AuditEventResponse {
+  return {
+    auditEventId: record.id,
+    eventKind: record.eventKind,
+    versionId: record.versionId,
+    previousVersionId: record.previousVersionId,
+    triggeredBy: record.triggeredBy,
+    note: record.note,
+    warningsIgnored: record.warningsIgnored,
+    changeSummary: record.changeSummary,
+    createdAt: record.createdAt,
   };
 }
 

@@ -1,17 +1,18 @@
 openapi: 3.1.0
 info:
   title: Timetable Worker Admin API
-  version: 0.2.0
+  version: 0.6.0
   description: |
-    Sprint 2 admin contract for importing canonical timetable JSON and publishing a draft version.
-    If import execution becomes asynchronous later, keep the response envelope stable and switch the
-    import success status from `201` to `202` rather than reshaping the payload.
+    Sprint 6 admin contract for operator-driven import, preview, publish, rollback, and audit workflows.
+    `/v1/*` routes require the `x-import-secret` header when the runtime is configured with
+    `IMPORT_SHARED_SECRET`.
 servers:
   - url: https://admin.example.com
 tags:
   - name: Operations
   - name: Imports
-  - name: Publishing
+  - name: Versions
+  - name: Audit
 paths:
   /health:
     get:
@@ -29,7 +30,7 @@ paths:
     get:
       tags: [Operations]
       operationId: getAdminReadiness
-      summary: Report whether the admin worker can perform import and publish operations.
+      summary: Report whether the admin worker can perform admin operations.
       responses:
         "200":
           description: The admin worker is ready.
@@ -47,28 +48,31 @@ paths:
     post:
       tags: [Imports]
       operationId: createTimetableImport
-      summary: Import one canonical timetable payload as a draft version.
+      summary: Import a parser artifact as a draft timetable version.
+      description: |
+        Accepts either the raw parser artifact JSON body or a wrapper JSON object with
+        `artifact`, `sourceId`, `parserVersion`, `triggeredBy`, and `note`.
+      security:
+        - ImportSecretHeader: []
+      parameters:
+        - $ref: "#/components/parameters/OperatorIdHeader"
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ImportTimetableRequest"
+              oneOf:
+                - $ref: "#/components/schemas/ParserArtifact"
+                - $ref: "#/components/schemas/ImportEnvelopeRequest"
       responses:
         "201":
-          description: The canonical payload was accepted and stored as a draft version.
+          description: The artifact was accepted and stored as a draft version.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ImportTimetableResponse"
-        "409":
-          description: The import conflicts with an existing checksum or version identity.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "422":
-          description: The canonical payload failed validation.
+                $ref: "#/components/schemas/ImportResponse"
+        "400":
+          description: The import request was invalid, unauthorized, or otherwise rejected.
           content:
             application/json:
               schema:
@@ -79,40 +83,97 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /v1/versions/{versionId}/publish:
-    post:
-      tags: [Publishing]
-      operationId: publishTimetableVersion
-      summary: Promote a draft timetable version to the current published version.
+  /v1/versions:
+    get:
+      tags: [Versions]
+      operationId: listTimetableVersions
+      summary: List known timetable versions.
+      security:
+        - ImportSecretHeader: []
+      responses:
+        "200":
+          description: Version history was returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListVersionsResponse"
+        "400":
+          description: The request was rejected.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/versions/{versionId}/preview:
+    get:
+      tags: [Versions]
+      operationId: previewTimetableVersion
+      summary: Inspect a version before publish.
+      security:
+        - ImportSecretHeader: []
       parameters:
         - $ref: "#/components/parameters/VersionId"
+      responses:
+        "200":
+          description: Version preview information was returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VersionPreviewResponse"
+        "400":
+          description: The request was invalid or unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: The requested version was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/versions/{versionId}/publish:
+    post:
+      tags: [Versions]
+      operationId: publishTimetableVersion
+      summary: Promote a version to the current published timetable.
+      security:
+        - ImportSecretHeader: []
+      parameters:
+        - $ref: "#/components/parameters/VersionId"
+        - $ref: "#/components/parameters/OperatorIdHeader"
       requestBody:
         required: false
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/PublishVersionRequest"
+              $ref: "#/components/schemas/VersionActionRequest"
       responses:
         "200":
-          description: The requested version is now the current published version.
+          description: The requested version is now published.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PublishVersionResponse"
+                $ref: "#/components/schemas/VersionActionResponse"
+        "400":
+          description: The publish request was invalid or unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: The requested version does not exist.
+          description: The requested version was not found.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: The publish request conflicts with current version state.
+          description: The publish request conflicted with version state.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "422":
-          description: The target version is not publishable.
+          description: The target version was not publishable.
           content:
             application/json:
               schema:
@@ -123,7 +184,106 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /v1/versions/{versionId}/rollback:
+    post:
+      tags: [Versions]
+      operationId: rollbackTimetableVersion
+      summary: Re-point the published timetable to a previous version.
+      security:
+        - ImportSecretHeader: []
+      parameters:
+        - $ref: "#/components/parameters/VersionId"
+        - $ref: "#/components/parameters/OperatorIdHeader"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VersionActionRequest"
+      responses:
+        "200":
+          description: The rollback completed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VersionActionResponse"
+        "400":
+          description: The rollback request was invalid or unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: The requested version was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: The rollback request conflicted with version state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: The rollback target was not publishable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: The rollback operation failed unexpectedly.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/import-runs:
+    get:
+      tags: [Audit]
+      operationId: listImportRuns
+      summary: List import execution records.
+      security:
+        - ImportSecretHeader: []
+      responses:
+        "200":
+          description: Import history was returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListImportRunsResponse"
+        "400":
+          description: The request was rejected.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/audit-events:
+    get:
+      tags: [Audit]
+      operationId: listAuditEvents
+      summary: List publish and rollback audit events.
+      security:
+        - ImportSecretHeader: []
+      responses:
+        "200":
+          description: Audit history was returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListAuditEventsResponse"
+        "400":
+          description: The request was rejected.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
+  securitySchemes:
+    ImportSecretHeader:
+      type: apiKey
+      in: header
+      name: x-import-secret
+      description: Required for `/v1/*` only when the runtime is configured with `IMPORT_SHARED_SECRET`.
   parameters:
     VersionId:
       name: versionId
@@ -132,150 +292,26 @@ components:
       schema:
         type: string
         minLength: 1
-      description: Stable server-generated identifier for a timetable version.
+      description: Stable server-generated timetable version identifier.
+    OperatorIdHeader:
+      name: x-operator-id
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Optional operator identity used when the body omits `triggeredBy`.
   schemas:
     HealthResponse:
       type: object
       additionalProperties: false
       required:
-        - data
-        - meta
-      properties:
-        data:
-          $ref: "#/components/schemas/ServiceHealth"
-        meta:
-          $ref: "#/components/schemas/ResponseMeta"
-    ReadinessResponse:
-      type: object
-      additionalProperties: false
-      required:
-        - data
-        - meta
-      properties:
-        data:
-          $ref: "#/components/schemas/ServiceReadiness"
-        meta:
-          $ref: "#/components/schemas/ResponseMeta"
-    ImportTimetableRequest:
-      type: object
-      additionalProperties: false
-      required:
-        - source
-        - versionLabel
-        - sourceDate
-        - sections
-      properties:
-        source:
-          $ref: "#/components/schemas/ImportSource"
-        versionLabel:
-          type: string
-          minLength: 1
-          description: Human-readable label for the imported timetable version.
-        sourceDate:
-          type: string
-          format: date
-        checksum:
-          type:
-            - string
-            - "null"
-          description: Optional checksum of the canonical JSON artifact or original PDF.
-        parserVersion:
-          type:
-            - string
-            - "null"
-        parserWarnings:
-          type: array
-          items:
-            $ref: "#/components/schemas/ImportWarning"
-        sections:
-          type: array
-          minItems: 1
-          items:
-            $ref: "#/components/schemas/ImportedSection"
-    ImportTimetableResponse:
-      type: object
-      additionalProperties: false
-      required:
-        - data
-        - meta
-      properties:
-        data:
-          type: object
-          additionalProperties: false
-          required:
-            - importId
-            - version
-            - summary
-            - warnings
-          properties:
-            importId:
-              type: string
-            version:
-              $ref: "#/components/schemas/VersionSummary"
-            summary:
-              $ref: "#/components/schemas/ImportSummary"
-            warnings:
-              type: array
-              items:
-                $ref: "#/components/schemas/ImportWarning"
-        meta:
-          $ref: "#/components/schemas/ResponseMeta"
-    PublishVersionRequest:
-      type: object
-      additionalProperties: false
-      properties:
-        expectedCurrentVersionId:
-          type:
-            - string
-            - "null"
-          description: Optional optimistic concurrency guard for safe publish workflows.
-        note:
-          type:
-            - string
-            - "null"
-          maxLength: 500
-    PublishVersionResponse:
-      type: object
-      additionalProperties: false
-      required:
-        - data
-        - meta
-      properties:
-        data:
-          type: object
-          additionalProperties: false
-          required:
-            - version
-          properties:
-            version:
-              $ref: "#/components/schemas/VersionSummary"
-            previousVersion:
-              oneOf:
-                - $ref: "#/components/schemas/VersionSummary"
-                - type: "null"
-        meta:
-          $ref: "#/components/schemas/ResponseMeta"
-    ResponseMeta:
-      type: object
-      additionalProperties: false
-      required:
         - requestId
-        - generatedAt
-      properties:
-        requestId:
-          type: string
-          description: Correlation identifier emitted in logs and error paths.
-        generatedAt:
-          type: string
-          format: date-time
-    ServiceHealth:
-      type: object
-      additionalProperties: false
-      required:
         - service
         - status
         - environment
       properties:
+        requestId:
+          type: string
         service:
           type: string
         status:
@@ -283,264 +319,289 @@ components:
           enum: [ok]
         environment:
           type: string
-    ServiceReadiness:
+    ReadinessResponse:
       type: object
       additionalProperties: false
       required:
+        - requestId
         - service
         - status
         - environment
-        - checks
       properties:
+        requestId:
+          type: string
         service:
           type: string
         status:
           type: string
-          enum: [ready, degraded]
+          enum: [ready]
         environment:
           type: string
-        checks:
+    ParserArtifact:
+      type: object
+      additionalProperties: true
+      description: Raw parser artifact JSON accepted directly by `POST /v1/imports`.
+    ImportEnvelopeRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - artifact
+      properties:
+        artifact:
+          $ref: "#/components/schemas/ParserArtifact"
+        sourceId:
+          type:
+            - string
+            - "null"
+        parserVersion:
+          type:
+            - string
+            - "null"
+        triggeredBy:
+          type:
+            - string
+            - "null"
+        note:
+          type:
+            - string
+            - "null"
+    VersionActionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        triggeredBy:
+          type:
+            - string
+            - "null"
+        note:
+          type:
+            - string
+            - "null"
+        ignoreWarnings:
+          type: boolean
+          default: false
+    ImportResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - requestId
+        - import
+        - importRun
+        - version
+      properties:
+        requestId:
+          type: string
+        import:
+          $ref: "#/components/schemas/ImportSummary"
+        importRun:
+          $ref: "#/components/schemas/ImportRun"
+        version:
+          $ref: "#/components/schemas/VersionRecord"
+    ListVersionsResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - requestId
+        - versions
+      properties:
+        requestId:
+          type: string
+        versions:
           type: array
           items:
-            $ref: "#/components/schemas/DependencyCheck"
-    DependencyCheck:
+            $ref: "#/components/schemas/VersionRecord"
+    VersionPreviewResponse:
       type: object
       additionalProperties: false
       required:
-        - name
-        - status
+        - requestId
+        - version
+        - currentVersion
+        - importRun
+        - warnings
+        - sections
+        - changes
+        - pushPreview
+        - publishable
       properties:
-        name:
+        requestId:
           type: string
-          enum: [d1, parser-artifact, audit-log]
-        status:
-          type: string
-          enum: [ok, unavailable]
-        detail:
-          type: string
-    VersionSummary:
+        version:
+          $ref: "#/components/schemas/VersionRecord"
+        currentVersion:
+          oneOf:
+            - $ref: "#/components/schemas/VersionRecord"
+            - type: "null"
+        importRun:
+          oneOf:
+            - $ref: "#/components/schemas/ImportRun"
+            - type: "null"
+        warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/FlexibleObject"
+        sections:
+          type: array
+          items:
+            $ref: "#/components/schemas/FlexibleObject"
+        changes:
+          $ref: "#/components/schemas/ChangeSet"
+        pushPreview:
+          $ref: "#/components/schemas/PushPreview"
+        publishable:
+          type: boolean
+    VersionActionResponse:
       type: object
       additionalProperties: false
       required:
-        - id
-        - label
-        - sourceDate
-        - importedAt
-        - status
-        - isCurrent
-        - sectionCount
-        - meetingCount
+        - requestId
+        - version
+        - previousVersion
+        - changes
+        - pushPreview
+        - auditEvent
       properties:
-        id:
+        requestId:
           type: string
-        label:
+        version:
+          $ref: "#/components/schemas/VersionRecord"
+        previousVersion:
+          oneOf:
+            - $ref: "#/components/schemas/VersionRecord"
+            - type: "null"
+        changes:
+          $ref: "#/components/schemas/ChangeSet"
+        pushPreview:
+          $ref: "#/components/schemas/PushPreview"
+        auditEvent:
+          $ref: "#/components/schemas/AuditEvent"
+    ListImportRunsResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - requestId
+        - importRuns
+      properties:
+        requestId:
           type: string
-        sourceDate:
+        importRuns:
+          type: array
+          items:
+            $ref: "#/components/schemas/ImportRun"
+    ListAuditEventsResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - requestId
+        - auditEvents
+      properties:
+        requestId:
           type: string
-          format: date
-        importedAt:
+        auditEvents:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditEvent"
+    ImportSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - sectionsImported
+        - meetingsImported
+        - warningsCount
+      properties:
+        sectionsImported:
+          type: integer
+          minimum: 0
+        meetingsImported:
+          type: integer
+          minimum: 0
+        warningsCount:
+          type: integer
+          minimum: 0
+    VersionRecord:
+      type: object
+      additionalProperties: true
+      description: Timetable version record returned by the admin service.
+      properties:
+        versionId:
           type: string
-          format: date-time
+        publishStatus:
+          type: string
         publishedAt:
           type:
             - string
             - "null"
           format: date-time
-        status:
+    ImportRun:
+      type: object
+      additionalProperties: true
+      description: Import run record returned by the admin service.
+      properties:
+        importRunId:
           type: string
-          enum: [draft, published, archived]
-        isCurrent:
-          type: boolean
-        checksum:
+        triggeredBy:
           type:
             - string
             - "null"
-        sectionCount:
+    AuditEvent:
+      type: object
+      additionalProperties: true
+      description: Publish or rollback audit event returned by the admin service.
+      properties:
+        auditEventId:
+          type: string
+        triggeredBy:
+          type:
+            - string
+            - "null"
+    ChangeSet:
+      type: object
+      additionalProperties: true
+      properties:
+        summary:
+          $ref: "#/components/schemas/ChangeSummary"
+    ChangeSummary:
+      type: object
+      additionalProperties: true
+      properties:
+        sectionsChanged:
           type: integer
           minimum: 0
-        meetingCount:
+        totalChanges:
           type: integer
           minimum: 0
-    ImportSource:
+    PushPreview:
       type: object
-      additionalProperties: false
-      required:
-        - kind
+      additionalProperties: true
       properties:
-        kind:
-          type: string
-          enum: [parser-json]
-        fileName:
-          type:
-            - string
-            - "null"
-        artifactUrl:
-          type:
-            - string
-            - "null"
-          format: uri
-        generatedAt:
-          type:
-            - string
-            - "null"
-          format: date-time
-    ImportedSection:
-      type: object
-      additionalProperties: false
-      required:
-        - code
-        - displayName
-        - meetings
-      properties:
-        code:
-          type: string
-          minLength: 3
-          maxLength: 32
-        displayName:
-          type: string
-          minLength: 1
-        meetings:
-          type: array
-          minItems: 1
-          items:
-            $ref: "#/components/schemas/ImportedMeeting"
-    ImportedMeeting:
-      type: object
-      additionalProperties: false
-      required:
-        - courseName
-        - dayOfWeek
-        - startTime
-        - endTime
-        - isOnline
-        - sourcePage
-      properties:
-        courseCode:
-          type:
-            - string
-            - "null"
-        courseName:
-          type: string
-          minLength: 1
-        instructorName:
-          type:
-            - string
-            - "null"
-        roomLabel:
-          type:
-            - string
-            - "null"
-        isOnline:
+        wouldNotify:
           type: boolean
-        dayOfWeek:
-          type: string
-          enum: [monday, tuesday, wednesday, thursday, friday, saturday, sunday]
-        startTime:
-          type: string
-          pattern: "^[0-2][0-9]:[0-5][0-9]$"
-        endTime:
-          type: string
-          pattern: "^[0-2][0-9]:[0-5][0-9]$"
-        meetingType:
-          type:
-            - string
-            - "null"
-        sourcePage:
-          type: integer
-          minimum: 1
-        confidence:
-          type:
-            - string
-            - "null"
-          enum: [high, medium, low, null]
-        warnings:
+        sections:
           type: array
           items:
-            $ref: "#/components/schemas/ImportWarning"
-    ImportSummary:
+            $ref: "#/components/schemas/FlexibleObject"
+    FlexibleObject:
       type: object
-      additionalProperties: false
-      required:
-        - sectionCount
-        - meetingCount
-        - warningCount
-      properties:
-        sectionCount:
-          type: integer
-          minimum: 0
-        meetingCount:
-          type: integer
-          minimum: 0
-        warningCount:
-          type: integer
-          minimum: 0
-    ImportWarning:
-      type: object
-      additionalProperties: false
-      required:
-        - code
-        - message
-      properties:
-        code:
-          type: string
-          enum:
-            - parser_low_confidence
-            - inferred_duration
-            - inferred_room
-            - inferred_instructor
-            - duplicate_meeting
-        message:
-          type: string
-        sectionCode:
-          type:
-            - string
-            - "null"
-        sourcePage:
-          type:
-            - integer
-            - "null"
-          minimum: 1
+      additionalProperties: true
     ErrorResponse:
       type: object
       additionalProperties: false
       required:
         - error
-        - meta
       properties:
         error:
           $ref: "#/components/schemas/ErrorBody"
-        meta:
-          $ref: "#/components/schemas/ResponseMeta"
     ErrorBody:
       type: object
       additionalProperties: false
       required:
         - code
         - message
+        - requestId
       properties:
         code:
           type: string
-          enum:
-            - validation_error
-            - not_found
-            - import_conflict
-            - dependency_unavailable
-            - internal_error
         message:
           type: string
-        details:
-          type: array
-          items:
-            $ref: "#/components/schemas/ErrorDetail"
-    ErrorDetail:
-      type: object
-      additionalProperties: false
-      required:
-        - issue
-      properties:
-        field:
-          type: string
-        resource:
-          type: string
-        issue:
+        requestId:
           type: string
