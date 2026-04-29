@@ -78,3 +78,9 @@ python -m pdf_parser parse --input path/to/timetable.pdf
 - `tools/pdf_parser/` owns offline ingestion tooling.
 - `contracts/openapi/` owns HTTP contract drafts shared across clients.
 - `docs/` remains planning and architecture history and was intentionally left untouched in this slice.
+
+## Operations
+
+- Beta release readiness: `docs/operations/beta-release-checklist.md`
+- Beta support triage: `docs/operations/beta-support-runbook.md`
+- Admin import/publish workflow: `docs/operations/worker-admin-runbook.md`

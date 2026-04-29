@@ -1,12 +1,16 @@
 import "dart:convert";
 
 import "package:shared_preferences/shared_preferences.dart";
+import "package:timetable_app/core/monitoring/app_error_monitor.dart";
 import "package:timetable_app/data/models/reminder_models.dart";
 import "package:timetable_app/data/models/timetable_models.dart";
 import "package:timetable_app/data/storage/app_storage.dart";
 
 class SharedPreferencesAppStorage implements AppStorage {
-  SharedPreferencesAppStorage(this._preferences);
+  SharedPreferencesAppStorage(
+    this._preferences, {
+    AppErrorMonitor? errorMonitor,
+  }) : _errorMonitor = errorMonitor;
 
   static const String _selectedSectionCodeKey = "selected_section_code";
   static const String _lastSeenVersionIdKey = "last_seen_version_id";
@@ -15,6 +19,7 @@ class SharedPreferencesAppStorage implements AppStorage {
   static const String _reminderPreferencesKey = "reminder_preferences";
 
   final SharedPreferences _preferences;
+  final AppErrorMonitor? _errorMonitor;
 
   @override
   Future<void> clear() async {
@@ -46,9 +51,19 @@ class SharedPreferencesAppStorage implements AppStorage {
       return null;
     }
 
-    return SectionsSnapshot.fromCacheJson(
-      jsonDecode(value) as Map<String, dynamic>,
-    );
+    try {
+      return SectionsSnapshot.fromCacheJson(
+        jsonDecode(value) as Map<String, dynamic>,
+      );
+    } catch (error, stackTrace) {
+      await _preferences.remove(_sectionsSnapshotKey);
+      await _reportReadFailure(
+        error,
+        stackTrace,
+        source: "storage.sections_snapshot",
+      );
+      return null;
+    }
   }
 
   @override
@@ -58,9 +73,19 @@ class SharedPreferencesAppStorage implements AppStorage {
       return null;
     }
 
-    return SectionTimetable.fromCacheJson(
-      jsonDecode(value) as Map<String, dynamic>,
-    );
+    try {
+      return SectionTimetable.fromCacheJson(
+        jsonDecode(value) as Map<String, dynamic>,
+      );
+    } catch (error, stackTrace) {
+      await _preferences.remove(_timetableKey(sectionCode));
+      await _reportReadFailure(
+        error,
+        stackTrace,
+        source: "storage.section_timetable:$sectionCode",
+      );
+      return null;
+    }
   }
 
   @override
@@ -70,9 +95,19 @@ class SharedPreferencesAppStorage implements AppStorage {
       return ReminderPreferences.defaults;
     }
 
-    return ReminderPreferences.fromJson(
-      jsonDecode(value) as Map<String, dynamic>,
-    );
+    try {
+      return ReminderPreferences.fromJson(
+        jsonDecode(value) as Map<String, dynamic>,
+      );
+    } catch (error, stackTrace) {
+      await _preferences.remove(_reminderPreferencesKey);
+      await _reportReadFailure(
+        error,
+        stackTrace,
+        source: "storage.reminder_preferences",
+      );
+      return ReminderPreferences.defaults;
+    }
   }
 
   @override
@@ -131,5 +166,18 @@ class SharedPreferencesAppStorage implements AppStorage {
 
   String _timetableKey(String sectionCode) {
     return "$_timetablePrefix$sectionCode";
+  }
+
+  Future<void> _reportReadFailure(
+    Object error,
+    StackTrace stackTrace, {
+    required String source,
+  }) async {
+    await _errorMonitor?.recordError(
+      error,
+      stackTrace,
+      source: source,
+      fatal: false,
+    );
   }
 }

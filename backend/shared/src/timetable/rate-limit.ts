@@ -76,11 +76,7 @@ export class FixedWindowRateLimiter {
     });
   }
 
-  bump(input: {
-    key: string;
-    windowMs: number;
-    now?: number;
-  }): number {
+  bump(input: { key: string; windowMs: number; now?: number }): number {
     const now = input.now ?? Date.now();
     const existing = this.entries.get(input.key);
 
@@ -184,9 +180,10 @@ export function getClientIdentifier(request: {
   headers: Headers;
   method: string;
 }): string {
-  const forwardedFor = request.headers.get("cf-connecting-ip")
-    ?? request.headers.get("x-real-ip")
-    ?? request.headers.get("x-forwarded-for");
+  const forwardedFor =
+    request.headers.get("cf-connecting-ip") ??
+    request.headers.get("x-real-ip") ??
+    request.headers.get("x-forwarded-for");
 
   if (forwardedFor && forwardedFor.trim().length > 0) {
     const [first] = forwardedFor.split(",", 1);

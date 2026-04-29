@@ -55,11 +55,13 @@ async function requestImport(
       headers: createAuthorizedHeaders({
         "content-type": "application/json",
         "x-correlation-id":
-          overrides.correlationId ?? `corr-import-${artifact.source.version_id}`,
+          overrides.correlationId ??
+          `corr-import-${artifact.source.version_id}`,
       }),
       body: JSON.stringify({
         artifact,
-        sourceId: overrides.sourceId ?? `artifact:${artifact.source.version_id}`,
+        sourceId:
+          overrides.sourceId ?? `artifact:${artifact.source.version_id}`,
         parserVersion: overrides.parserVersion ?? "parser-test-1",
         triggeredBy: overrides.triggeredBy ?? "test-operator",
         note: overrides.note ?? null,
@@ -121,7 +123,10 @@ async function requestPreview(
   );
 }
 
-async function requestVersions(app: ReturnType<typeof createApp>, env: AdminEnv) {
+async function requestVersions(
+  app: ReturnType<typeof createApp>,
+  env: AdminEnv,
+) {
   return app.request(
     "http://localhost/v1/versions",
     {
@@ -575,10 +580,15 @@ describe("worker-admin", () => {
       ).status,
     ).toBe(200);
 
-    const rollbackResponse = await requestRollback(app, env, v1.source.version_id, {
-      triggeredBy: "release-bot",
-      note: "rollback bad publish",
-    });
+    const rollbackResponse = await requestRollback(
+      app,
+      env,
+      v1.source.version_id,
+      {
+        triggeredBy: "release-bot",
+        note: "rollback bad publish",
+      },
+    );
 
     expect(rollbackResponse.status).toBe(200);
     await expect(rollbackResponse.json()).resolves.toMatchObject({
@@ -601,7 +611,11 @@ describe("worker-admin", () => {
       },
     });
 
-    const previewResponse = await requestPreview(app, env, v1.source.version_id);
+    const previewResponse = await requestPreview(
+      app,
+      env,
+      v1.source.version_id,
+    );
     expect(previewResponse.status).toBe(200);
     await expect(previewResponse.json()).resolves.toMatchObject({
       version: {
@@ -681,7 +695,9 @@ describe("worker-admin", () => {
     expect(auditBody.auditEvents[0]).toMatchObject({
       eventKind: "import_failed",
     });
-    expect(auditBody.auditEvents[0]?.note).toContain("Import payload is invalid");
+    expect(auditBody.auditEvents[0]?.note).toContain(
+      "Import payload is invalid",
+    );
   });
 
   it("rejects admin reads and writes when the import secret is wrong", async () => {
@@ -750,7 +766,8 @@ describe("worker-admin", () => {
     const env = await createAdminEnv();
 
     expect(
-      (await app.request("http://localhost/imports/status", undefined, env)).status,
+      (await app.request("http://localhost/imports/status", undefined, env))
+        .status,
     ).toBe(200);
 
     const response = await app.request(

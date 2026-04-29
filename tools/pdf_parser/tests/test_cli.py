@@ -7,10 +7,10 @@ import pytest
 from pdf_parser.cli import main
 from pdf_parser.parser import DEFAULT_VERSION_ID, parse_pdf
 from pdf_parser.validation import load_artifact, validate_payload
+from tests.helpers import MeetingBlockSpec, build_synthetic_timetable_pdf
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 GOLDEN_ARTIFACT = PROJECT_ROOT / "fixtures" / "golden" / f"{DEFAULT_VERSION_ID}.json"
-SOURCE_PDF = Path(r"C:\Users\PC\Downloads\26 april sp26 CS DEPARTMENT (4days sec wise).pdf")
 
 
 def test_golden_artifact_passes_validation() -> None:
@@ -34,34 +34,38 @@ def test_validate_command_accepts_golden_artifact(capsys: pytest.CaptureFixture[
     assert "Validation passed." in stdout
 
 
-def test_parse_pdf_matches_golden_fixture_when_source_available() -> None:
-    if not SOURCE_PDF.exists():
-        pytest.skip("Local timetable PDF is not available on this machine.")
-
-    payload = parse_pdf(SOURCE_PDF, version_id=DEFAULT_VERSION_ID)
-    expected = load_artifact(GOLDEN_ARTIFACT)
-
-    assert payload == expected
-
-
-def test_parse_command_writes_output_file_when_source_available(tmp_path: Path) -> None:
-    if not SOURCE_PDF.exists():
-        pytest.skip("Local timetable PDF is not available on this machine.")
-
+def test_parse_command_writes_output_file_for_synthetic_pdf(tmp_path: Path) -> None:
+    source_pdf = tmp_path / "synthetic-timetable.pdf"
     output_path = tmp_path / "parsed.json"
+    build_synthetic_timetable_pdf(
+        source_pdf,
+        meeting_blocks=[
+            MeetingBlockSpec(
+                day_index=0,
+                slot_start=1,
+                slot_end=3,
+                lines=("CS LAB1", "Advanced Applied Machine", "Learning Lab", "Mr. Lab Instructor"),
+            ),
+            MeetingBlockSpec(
+                day_index=1,
+                slot_start=4,
+                slot_end=5,
+                lines=("FF-101", "Computer Organization &", "Assembly Language", "Ms. Tahira Ansari"),
+            ),
+        ],
+    )
 
     exit_code = main(
         [
             "parse",
             "--input",
-            str(SOURCE_PDF),
+            str(source_pdf),
             "--output",
             str(output_path),
-            "--version-id",
-            DEFAULT_VERSION_ID,
+            "--version-id=test-synthetic-version",
         ]
     )
 
     assert exit_code == 0
     assert output_path.exists()
-    assert load_artifact(output_path) == load_artifact(GOLDEN_ARTIFACT)
+    assert load_artifact(output_path) == parse_pdf(source_pdf, version_id="test-synthetic-version")

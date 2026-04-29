@@ -134,6 +134,34 @@ void main() {
     );
     expect(continueButton.onPressed, isNull);
   });
+
+  testWidgets("requires a new selection when the saved section is gone",
+      (tester) async {
+    SharedPreferences.setMockInitialValues({
+      "selected_section_code": "BS-CS-9Z",
+    });
+    final preferences = await SharedPreferences.getInstance();
+
+    await tester.pumpWidget(
+      _buildHarness(
+        storage: SharedPreferencesAppStorage(preferences),
+        sectionOverride: sectionsProvider.overrideWith(
+          (ref) async => SectionsSnapshot(
+            timetableVersion: _version,
+            sections: _sections,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.text("Selected: BS-CS-9Z"), findsNothing);
+    final continueButton = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, "Continue"),
+    );
+    expect(continueButton.onPressed, isNull);
+  });
 }
 
 Widget _buildHarness({

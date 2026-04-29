@@ -3,6 +3,7 @@ import "dart:io";
 import "package:flutter/material.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:http/http.dart" as http;
+import "package:timetable_app/core/refresh/app_refresh.dart";
 import "package:timetable_app/core/providers/app_providers.dart";
 import "package:timetable_app/data/api/api_exception.dart";
 import "package:timetable_app/data/models/timetable_models.dart";
@@ -48,10 +49,7 @@ class _SectionPickerScreenState extends ConsumerState<SectionPickerScreen> {
         title: const Text("Section picker"),
       ),
       body: RefreshIndicator(
-        onRefresh: () async {
-          ref.invalidate(sectionsProvider);
-          await ref.read(sectionsProvider.future);
-        },
+        onRefresh: () => _refreshSections(),
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 132),
@@ -139,6 +137,20 @@ class _SectionPickerScreenState extends ConsumerState<SectionPickerScreen> {
           .read(selectedSectionCodeControllerProvider.notifier)
           .selectSection(sectionCode);
       widget.onConfirmed?.call(sectionCode);
+    } catch (error, stackTrace) {
+      await ref.read(appErrorMonitorProvider).recordError(
+            error,
+            stackTrace,
+            source: "sections.confirm_selection",
+            fatal: false,
+          );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Could not save the selected section right now."),
+          ),
+        );
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -146,6 +158,23 @@ class _SectionPickerScreenState extends ConsumerState<SectionPickerScreen> {
         });
       }
     }
+  }
+
+  Future<void> _refreshSections() async {
+    final result = await refreshSectionsData(ref);
+    if (!mounted || !result.hadFailures) {
+      return;
+    }
+
+    final message = result.usedCachedSections
+        ? "Refresh failed, so the last downloaded section list is still in use."
+        : "Refresh failed. Connect once so the section list can be downloaded.";
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+      ),
+    );
   }
 }
 

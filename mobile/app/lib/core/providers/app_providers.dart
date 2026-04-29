@@ -1,7 +1,10 @@
 import "package:flutter/foundation.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:http/http.dart" as http;
+import "package:timetable_app/core/bootstrap/app_bootstrap.dart";
 import "package:timetable_app/core/config/app_config.dart";
+import "package:timetable_app/core/monitoring/app_error_event.dart";
+import "package:timetable_app/core/monitoring/app_error_monitor.dart";
 import "package:timetable_app/data/api/timetable_api_client.dart";
 import "package:timetable_app/data/models/reminder_models.dart";
 import "package:timetable_app/data/models/timetable_models.dart";
@@ -18,6 +21,16 @@ final appConfigProvider = Provider<AppConfig>(
 
 final appStorageProvider = Provider<AppStorage>(
   (ref) => throw UnimplementedError("appStorageProvider must be overridden."),
+);
+
+final _defaultAppErrorMonitor = MemoryAppErrorMonitor();
+
+final appErrorMonitorProvider = Provider<AppErrorMonitor>(
+  (ref) => _defaultAppErrorMonitor,
+);
+
+final appBootstrapStatusProvider = Provider<AppBootstrapStatus>(
+  (ref) => AppBootstrapStatus.healthy,
 );
 
 final httpClientProvider = Provider<http.Client>((ref) {
@@ -51,6 +64,7 @@ final reminderSyncCoordinatorProvider =
   return ReminderSyncCoordinator(
     storage: ref.watch(appStorageProvider),
     scheduler: ref.watch(reminderSchedulerProvider),
+    errorMonitor: ref.watch(appErrorMonitorProvider),
   );
 });
 
@@ -116,6 +130,10 @@ final lastSeenVersionIdProvider = FutureProvider<String?>((ref) {
 final reminderPermissionStatusProvider =
     FutureProvider<ReminderPermissionStatus>((ref) {
   return ref.watch(reminderSchedulerProvider).getPermissionStatus();
+});
+
+final recentAppErrorsProvider = FutureProvider<List<AppErrorEvent>>((ref) {
+  return ref.watch(appErrorMonitorProvider).readRecentEvents();
 });
 
 final reminderPreferencesControllerProvider =

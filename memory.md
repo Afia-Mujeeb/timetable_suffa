@@ -55,6 +55,15 @@ Last updated: 2026-04-29
 - Replaced the fixture-only admin helper with a general operator CLI at `backend/worker-admin/scripts/import-fixture.mjs`, added package scripts for import/preview/publish/rollback/history actions, wrote `docs/operations/worker-admin-runbook.md`, and refreshed `contracts/openapi/worker-admin.openapi.yaml` to match the current Sprint 6 runtime contract.
 - Expanded backend tests to cover migration smoke with the new tables, tracked imports, failed-import audit creation, preview-before-publish, warning-gated publish, rollback state transitions, and audit/history endpoints.
 
+## Sprint 7 outcome
+
+- Added deterministic parser regression protection under `tools/pdf_parser/tests/`, including synthetic PyMuPDF-built fixtures for wrapped course titles, merged long lab blocks, wrapped online-day labels, and malformed or partial PDF inputs, plus a CLI parse test that no longer depends on the uncommitted Downloads PDF.
+- Hardened both backend Workers with lightweight in-memory beta abuse guards and operational metrics: `GET /metrics` now exposes request totals, final error totals by code/type, and rate-limit counts by rule, while public API and admin routes now return structured `429 rate_limited` responses for burst traffic and repeated invalid requests.
+- Expanded backend API coverage to exercise the new rate-limit and metrics behavior alongside the existing import, publish, rollback, and read-path integration tests.
+- Reworked the mobile app boot and refresh paths around guarded bootstrap and local diagnostics: app startup now falls back to in-memory storage if `SharedPreferences` initialization fails, malformed cached payloads are dropped and reported instead of crashing the app, refresh flows degrade to cached/offline states with explicit user feedback, and reminder reschedule failures are recorded without breaking section selection or normal app use.
+- Added mobile diagnostics surfaces and tests for bootstrap fallback, offline startup, malformed cache recovery, reminder failure containment, refresh hardening, and the section-picker edge case where a previously saved section is no longer present.
+- Added Sprint 7 beta-readiness docs at `docs/operations/beta-release-checklist.md` and `docs/operations/beta-support-runbook.md`, then refreshed the admin runbook so operators know to inspect `GET /metrics` and react intentionally to `429` responses during release windows.
+
 ## Verified toolchain on this machine
 
 - Git `2.54.0.windows.1`
@@ -72,7 +81,9 @@ Last updated: 2026-04-29
 - Android Studio is installed, but Android SDK setup and license acceptance still need to be completed before `flutter doctor` is fully green for Android.
 - The golden parser artifact still carries one known warning: `normalized_domain/meetings/160: missing room on non-online meeting`, which corresponds to `BS-CS-MISC 3` page `25` where the source PDF does not show a room line for `Computer Networks`.
 - The backend Workers now expect a real shared D1 database binding and, for protected admin writes, a real `IMPORT_SHARED_SECRET`; the committed Wrangler configs still use placeholder Cloudflare database IDs.
+- The new Worker rate limiting and metrics are intentionally lightweight and in-memory per Worker instance; they are good enough for beta detection and throttling, but they are not a durable cross-instance quota system.
 - The mobile app defaults to `http://127.0.0.1:8787`; real runs still need the correct `API_BASE_URL` via `--dart-define`, and Android emulator runs should use `10.0.2.2` for a local Worker.
+- The mobile app now records recent crash and runtime diagnostics locally, but there is still no remote crash-reporting SaaS wired in; beta monitoring currently depends on local diagnostics plus operator reproduction and backend logs/metrics.
 - Section-scoped push planning is now exposed through admin `pushPreview` responses, but actual Firebase device-topic subscription in `mobile/app` and outbound publish-time fan-out from the admin Worker are still not implemented because this repo still lacks the required Firebase client/runtime wiring and delivery credentials.
 - The current reminder implementation is intentionally active on Android and iOS only; non-mobile platforms fall back to a no-op reminder scheduler.
 
@@ -83,6 +94,7 @@ Last updated: 2026-04-29
 - `pnpm --dir backend/worker-admin exec wrangler --version`
 - `python -m ruff check tools/pdf_parser`
 - `python -m pytest tools/pdf_parser`
+- `python -m pytest tools/pdf_parser/tests`
 - `python -m pdf_parser parse --input "C:\Users\PC\Downloads\26 april sp26 CS DEPARTMENT (4days sec wise).pdf" --output "E:\timetable\tools\pdf_parser\fixtures\golden\spring-2026-2026-04-26.json"`
 - `python -m pdf_parser validate --input "E:\timetable\tools\pdf_parser\fixtures\golden\spring-2026-2026-04-26.json"`
 - `cd mobile/app && flutter analyze`

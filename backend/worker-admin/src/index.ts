@@ -193,10 +193,9 @@ function parseImportBody(
   const bodyTriggeredBy = normalizeOptionalString(candidate.triggeredBy);
 
   return {
-    artifact:
-      Object.prototype.hasOwnProperty.call(candidate, "artifact")
-        ? candidate.artifact
-        : body,
+    artifact: Object.prototype.hasOwnProperty.call(candidate, "artifact")
+      ? candidate.artifact
+      : body,
     sourceId: normalizeOptionalString(candidate.sourceId),
     parserVersion: normalizeOptionalString(candidate.parserVersion),
     triggeredBy: resolveTriggeredBy(context, bodyTriggeredBy),
@@ -217,7 +216,10 @@ function parseVersionActionBody(
   }
 
   if (typeof body !== "object") {
-    throw new AppError("validation_error", "Request body must be a JSON object.");
+    throw new AppError(
+      "validation_error",
+      "Request body must be a JSON object.",
+    );
   }
 
   const candidate = body as {
@@ -287,9 +289,7 @@ function createRateLimitResponse(
   });
 }
 
-export function createApp(
-  dependencies: AppDependencies = {},
-): Hono<{
+export function createApp(dependencies: AppDependencies = {}): Hono<{
   Bindings: Bindings;
   Variables: Variables;
 }> {
@@ -462,7 +462,10 @@ export function createApp(
       message: appError.message,
     });
     context.set("errorCode", appError.code);
-    context.set("errorType", error instanceof Error ? error.name : "UnknownError");
+    context.set(
+      "errorType",
+      error instanceof Error ? error.name : "UnknownError",
+    );
     metrics.recordError({
       code: appError.code,
       method,
@@ -677,8 +680,9 @@ export function createApp(
       (version) => version.publishStatus === "draft",
     );
     const currentVersion =
-      versions.versions.find((version) => version.publishStatus === "published") ??
-      null;
+      versions.versions.find(
+        (version) => version.publishStatus === "published",
+      ) ?? null;
     const env = getBindings(context);
 
     return context.json({

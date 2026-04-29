@@ -3,6 +3,7 @@ export type ErrorCode =
   | "not_found"
   | "import_conflict"
   | "dependency_unavailable"
+  | "rate_limited"
   | "internal_error";
 
 const STATUS_BY_CODE: Record<ErrorCode, number> = {
@@ -10,6 +11,7 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   not_found: 404,
   import_conflict: 409,
   dependency_unavailable: 503,
+  rate_limited: 429,
   internal_error: 500,
 };
 

@@ -5,10 +5,7 @@ import {
   D1DatabaseClient,
   type D1DatabaseLike,
 } from "../../shared/src/timetable/db";
-import {
-  AppError,
-  isAppError,
-} from "../../shared/src/timetable/errors";
+import { AppError, isAppError } from "../../shared/src/timetable/errors";
 import { createWorkerMetrics } from "../../shared/src/timetable/metrics";
 import {
   createRateLimitGuard,
@@ -133,9 +130,7 @@ function createRateLimitResponse(
   });
 }
 
-export function createApp(
-  dependencies: AppDependencies = {},
-): Hono<{
+export function createApp(dependencies: AppDependencies = {}): Hono<{
   Bindings: Bindings;
   Variables: Variables;
 }> {
@@ -298,7 +293,10 @@ export function createApp(
       message: appError.message,
     });
     context.set("errorCode", appError.code);
-    context.set("errorType", error instanceof Error ? error.name : "UnknownError");
+    context.set(
+      "errorType",
+      error instanceof Error ? error.name : "UnknownError",
+    );
     metrics.recordError({
       code: appError.code,
       method,

@@ -1,6 +1,6 @@
 # Worker Admin Operator Runbook
 
-This runbook covers Sprint 6 operator tasks for the timetable admin API exposed by `backend/worker-admin`.
+This runbook covers Sprint 6 and Sprint 7 operator tasks for the timetable admin API exposed by `backend/worker-admin`.
 
 ## Prerequisites
 
@@ -27,6 +27,17 @@ $requestId = "worker-admin-$(Get-Date -Format yyyyMMddHHmmss)"
 ```
 
 The CLI prints the raw response JSON to stdout and exits non-zero for HTTP failures, which makes it safe to use in CI jobs.
+
+## Metrics And Abuse Signals
+
+The admin worker exposes `GET /metrics` for a lightweight operational snapshot.
+Review it during and after release windows to confirm:
+
+- request totals by final response status
+- error totals by error code and type
+- rate-limited traffic totals by rule
+
+If operators see repeated `429` responses from admin endpoints, stop retrying blindly and inspect `/metrics` plus the worker logs before continuing.
 
 ## Import A New Artifact
 

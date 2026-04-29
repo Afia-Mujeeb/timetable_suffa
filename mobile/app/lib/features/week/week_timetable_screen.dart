@@ -1,6 +1,7 @@
 import "package:flutter/material.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:go_router/go_router.dart";
+import "package:timetable_app/core/refresh/app_refresh.dart";
 import "package:timetable_app/core/providers/app_providers.dart";
 import "package:timetable_app/data/api/api_exception.dart";
 import "package:timetable_app/data/models/timetable_models.dart";
@@ -23,13 +24,13 @@ class WeekTimetableScreen extends ConsumerWidget {
           ),
           IconButton(
             tooltip: "Refresh",
-            onPressed: () => _refreshData(ref),
+            onPressed: () => _refreshData(context, ref),
             icon: const Icon(Icons.refresh_rounded),
           ),
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: () => _refreshData(ref),
+        onRefresh: () => _refreshData(context, ref),
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 120),
@@ -52,7 +53,7 @@ class WeekTimetableScreen extends ConsumerWidget {
               ),
               error: (error, stackTrace) => _ErrorStateCard(
                 error: error,
-                onRetry: () => _refreshData(ref),
+                onRetry: () => _refreshData(context, ref),
               ),
             ),
             const SizedBox(height: 16),
@@ -114,14 +115,21 @@ class WeekTimetableScreen extends ConsumerWidget {
   }
 }
 
-Future<void> _refreshData(WidgetRef ref) async {
-  ref.invalidate(sectionsProvider);
-  ref.invalidate(selectedSectionTimetableProvider);
+Future<void> _refreshData(BuildContext context, WidgetRef ref) async {
+  final result = await refreshSelectedSectionData(ref);
+  if (!context.mounted || !result.hadFailures) {
+    return;
+  }
 
-  await Future.wait([
-    ref.read(sectionsProvider.future),
-    ref.read(selectedSectionTimetableProvider.future),
-  ]);
+  final message = result.usedCachedData
+      ? "Refresh failed, so cached timetable data is still being shown."
+      : "Refresh failed. Try again when the timetable service is reachable.";
+
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(message),
+    ),
+  );
 }
 
 class _HeaderCard extends StatelessWidget {

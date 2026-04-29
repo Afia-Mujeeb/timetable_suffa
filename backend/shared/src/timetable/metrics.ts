@@ -46,7 +46,9 @@ function incrementCounter(
 
 function toObject(counters: Map<string, number>): Record<string, number> {
   return Object.fromEntries(
-    [...counters.entries()].sort(([left], [right]) => left.localeCompare(right)),
+    [...counters.entries()].sort(([left], [right]) =>
+      left.localeCompare(right),
+    ),
   );
 }
 

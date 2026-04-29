@@ -1,7 +1,9 @@
 import "package:flutter/material.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:go_router/go_router.dart";
+import "package:timetable_app/core/bootstrap/app_bootstrap.dart";
 import "package:timetable_app/core/providers/app_providers.dart";
+import "package:timetable_app/core/monitoring/app_error_event.dart";
 import "package:timetable_app/data/models/reminder_models.dart";
 
 class SettingsScreen extends ConsumerWidget {
@@ -20,6 +22,8 @@ class SettingsScreen extends ConsumerWidget {
     final reminderPermissionStatus = ref.watch(
       reminderPermissionStatusProvider,
     );
+    final bootstrapStatus = ref.watch(appBootstrapStatusProvider);
+    final recentAppErrors = ref.watch(recentAppErrorsProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -55,6 +59,55 @@ class SettingsScreen extends ConsumerWidget {
                   _SettingRow(
                     label: "Last seen version",
                     value: lastSeenVersionId.valueOrNull ?? "Not cached yet",
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "Stability diagnostics",
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    "Beta builds keep a lightweight local error log so startup, storage, and reminder issues can be inspected without blocking timetable use.",
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 16),
+                  _SettingRow(
+                    label: "Startup mode",
+                    value: bootstrapStatus.isDegraded
+                        ? "Degraded startup"
+                        : "Normal startup",
+                  ),
+                  _SettingRow(
+                    label: "Error capture",
+                    value: ref.watch(appErrorMonitorProvider).isPersistent
+                        ? "Persistent local log"
+                        : "Session-only log",
+                  ),
+                  if (bootstrapStatus.message case final message?)
+                    _SettingRow(
+                      label: "Startup note",
+                      value: message,
+                    ),
+                  recentAppErrors.when(
+                    data: (events) => _DiagnosticsSummary(
+                      events: events,
+                      bootstrapStatus: bootstrapStatus,
+                    ),
+                    loading: () => const LinearProgressIndicator(minHeight: 4),
+                    error: (error, stackTrace) => Text(
+                      "Recent diagnostic events could not be loaded.",
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
                   ),
                 ],
               ),
@@ -258,6 +311,44 @@ class SettingsScreen extends ConsumerWidget {
   }
 }
 
+class _DiagnosticsSummary extends StatelessWidget {
+  const _DiagnosticsSummary({
+    required this.events,
+    required this.bootstrapStatus,
+  });
+
+  final List<AppErrorEvent> events;
+  final AppBootstrapStatus bootstrapStatus;
+
+  @override
+  Widget build(BuildContext context) {
+    final latestEvent = events.isEmpty ? null : events.first;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SettingRow(
+          label: "Recent issues",
+          value: events.isEmpty
+              ? "No recent issues captured"
+              : events.length.toString(),
+        ),
+        if (latestEvent != null)
+          _SettingRow(
+            label: "Latest issue",
+            value:
+                "${latestEvent.source} at ${_formatDiagnosticsTimestamp(latestEvent.timestamp)}",
+          ),
+        if (latestEvent != null)
+          Text(
+            latestEvent.message,
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+      ],
+    );
+  }
+}
+
 String _permissionSummary({
   required ReminderPermissionStatus? permissionStatus,
   required bool enabled,
@@ -347,4 +438,19 @@ class _SettingRow extends StatelessWidget {
       ),
     );
   }
+}
+
+String _formatDiagnosticsTimestamp(String iso8601) {
+  final timestamp = DateTime.tryParse(iso8601);
+  if (timestamp == null) {
+    return iso8601;
+  }
+
+  final local = timestamp.toLocal();
+  final minute = local.minute.toString().padLeft(2, "0");
+  final hour = local.hour.toString().padLeft(2, "0");
+  final month = local.month.toString().padLeft(2, "0");
+  final day = local.day.toString().padLeft(2, "0");
+
+  return "$day/$month $hour:$minute";
 }

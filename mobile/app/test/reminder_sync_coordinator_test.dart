@@ -1,5 +1,6 @@
 import "package:flutter_test/flutter_test.dart";
 import "package:shared_preferences/shared_preferences.dart";
+import "package:timetable_app/core/monitoring/app_error_monitor.dart";
 import "package:timetable_app/data/models/reminder_models.dart";
 import "package:timetable_app/data/models/timetable_models.dart";
 import "package:timetable_app/data/reminders/reminder_schedule.dart";
@@ -99,6 +100,34 @@ void main() {
     expect(scheduler.cancelAllCallCount, 0);
     expect(scheduler.replaceScheduleCallCount, 0);
   });
+
+  test("scheduler failures are reported without bubbling out", () async {
+    SharedPreferences.setMockInitialValues({});
+    final preferences = await SharedPreferences.getInstance();
+    final storage = SharedPreferencesAppStorage(preferences);
+    final scheduler = _ThrowingReminderScheduler();
+    final monitor = MemoryAppErrorMonitor();
+    final coordinator = ReminderSyncCoordinator(
+      storage: storage,
+      scheduler: scheduler,
+      errorMonitor: monitor,
+    );
+
+    await storage.writeSelectedSectionCode("BS-CS-2A");
+    await storage.writeReminderPreferences(
+      const ReminderPreferences(
+        enabled: true,
+        leadTime: ReminderLeadTime.tenMinutes,
+      ),
+    );
+    await storage.writeSectionTimetable(_sectionTimetable);
+
+    await coordinator.syncSelectedSection();
+
+    final events = await monitor.readRecentEvents();
+    expect(events, hasLength(1));
+    expect(events.single.source, "reminders.replace_schedule");
+  });
 }
 
 class _FakeReminderScheduler implements ReminderScheduler {
@@ -120,6 +149,26 @@ class _FakeReminderScheduler implements ReminderScheduler {
   Future<void> replaceSchedule(List<ScheduledReminder> reminders) async {
     replaceScheduleCallCount += 1;
     lastScheduledReminders = reminders;
+  }
+
+  @override
+  Future<ReminderPermissionStatus> requestPermissions() async {
+    return ReminderPermissionStatus.granted;
+  }
+}
+
+class _ThrowingReminderScheduler implements ReminderScheduler {
+  @override
+  Future<void> cancelAll() async {}
+
+  @override
+  Future<ReminderPermissionStatus> getPermissionStatus() async {
+    return ReminderPermissionStatus.granted;
+  }
+
+  @override
+  Future<void> replaceSchedule(List<ScheduledReminder> reminders) async {
+    throw StateError("scheduler failed");
   }
 
   @override

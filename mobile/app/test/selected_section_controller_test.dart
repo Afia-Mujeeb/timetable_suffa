@@ -2,6 +2,7 @@ import "package:flutter_test/flutter_test.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:shared_preferences/shared_preferences.dart";
 import "package:timetable_app/core/config/app_config.dart";
+import "package:timetable_app/core/monitoring/app_error_monitor.dart";
 import "package:timetable_app/core/providers/app_providers.dart";
 import "package:timetable_app/data/models/reminder_models.dart";
 import "package:timetable_app/data/models/timetable_models.dart";
@@ -84,6 +85,47 @@ void main() {
       expect(scheduler.lastScheduledReminders.single.sectionCode, "BS-CS-2A");
     },
   );
+
+  test("keeps the section change when reminder rescheduling fails", () async {
+    SharedPreferences.setMockInitialValues({});
+    final preferences = await SharedPreferences.getInstance();
+    final storage = SharedPreferencesAppStorage(preferences);
+    final scheduler = _ThrowingReminderScheduler();
+    final monitor = MemoryAppErrorMonitor();
+
+    await storage.writeReminderPreferences(
+      const ReminderPreferences(
+        enabled: true,
+        leadTime: ReminderLeadTime.tenMinutes,
+      ),
+    );
+    await storage.writeSectionTimetable(_sectionTimetable);
+
+    final container = ProviderContainer(
+      overrides: [
+        appConfigProvider.overrideWithValue(
+          const AppConfig(
+            apiBaseUrl: "http://localhost:8787",
+            appFlavor: "test",
+          ),
+        ),
+        appStorageProvider.overrideWithValue(storage),
+        appErrorMonitorProvider.overrideWithValue(monitor),
+        reminderSchedulerProvider.overrideWithValue(scheduler),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(selectedSectionCodeControllerProvider.future);
+    await container
+        .read(selectedSectionCodeControllerProvider.notifier)
+        .selectSection("BS-CS-2A");
+
+    expect(await storage.readSelectedSectionCode(), "BS-CS-2A");
+    final events = await monitor.readRecentEvents();
+    expect(events, hasLength(1));
+    expect(events.single.source, "reminders.replace_schedule");
+  });
 }
 
 class _FakeReminderScheduler implements ReminderScheduler {
@@ -102,6 +144,26 @@ class _FakeReminderScheduler implements ReminderScheduler {
   Future<void> replaceSchedule(List<ScheduledReminder> reminders) async {
     replaceScheduleCallCount += 1;
     lastScheduledReminders = reminders;
+  }
+
+  @override
+  Future<ReminderPermissionStatus> requestPermissions() async {
+    return ReminderPermissionStatus.granted;
+  }
+}
+
+class _ThrowingReminderScheduler implements ReminderScheduler {
+  @override
+  Future<void> cancelAll() async {}
+
+  @override
+  Future<ReminderPermissionStatus> getPermissionStatus() async {
+    return ReminderPermissionStatus.granted;
+  }
+
+  @override
+  Future<void> replaceSchedule(List<ScheduledReminder> reminders) async {
+    throw StateError("scheduler failed");
   }
 
   @override
