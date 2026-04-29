@@ -7,6 +7,7 @@ import "package:shared_preferences/shared_preferences.dart";
 import "package:timetable_app/core/providers/app_providers.dart";
 import "package:timetable_app/core/theme/app_theme.dart";
 import "package:timetable_app/data/models/timetable_models.dart";
+import "package:timetable_app/data/reminders/noop_reminder_scheduler.dart";
 import "package:timetable_app/data/storage/shared_preferences_app_storage.dart";
 import "package:timetable_app/features/sections/section_picker_screen.dart";
 
@@ -143,6 +144,9 @@ Widget _buildHarness({
   return ProviderScope(
     overrides: [
       appStorageProvider.overrideWithValue(storage),
+      reminderSchedulerProvider.overrideWithValue(
+        const NoopReminderScheduler(),
+      ),
       sectionOverride,
     ],
     child: MaterialApp(

@@ -1,58 +1,26 @@
 import "package:flutter_test/flutter_test.dart";
-import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:shared_preferences/shared_preferences.dart";
-import "package:timetable_app/core/config/app_config.dart";
-import "package:timetable_app/core/providers/app_providers.dart";
 import "package:timetable_app/data/models/reminder_models.dart";
 import "package:timetable_app/data/models/timetable_models.dart";
 import "package:timetable_app/data/reminders/reminder_schedule.dart";
 import "package:timetable_app/data/reminders/reminder_scheduler.dart";
+import "package:timetable_app/data/reminders/reminder_sync_coordinator.dart";
 import "package:timetable_app/data/storage/shared_preferences_app_storage.dart";
 
 void main() {
-  test("persists the selected section code", () async {
-    SharedPreferences.setMockInitialValues({});
-    final preferences = await SharedPreferences.getInstance();
-    final storage = SharedPreferencesAppStorage(preferences);
-    final scheduler = _FakeReminderScheduler();
-
-    final container = ProviderContainer(
-      overrides: [
-        appConfigProvider.overrideWithValue(
-          const AppConfig(
-            apiBaseUrl: "http://localhost:8787",
-            appFlavor: "test",
-          ),
-        ),
-        appStorageProvider.overrideWithValue(storage),
-        reminderSchedulerProvider.overrideWithValue(scheduler),
-      ],
-    );
-    addTearDown(container.dispose);
-
-    await container.read(selectedSectionCodeControllerProvider.future);
-    await container
-        .read(selectedSectionCodeControllerProvider.notifier)
-        .selectSection("BS-CS-2A");
-
-    expect(
-      await storage.readSelectedSectionCode(),
-      "BS-CS-2A",
-    );
-    expect(
-      container.read(selectedSectionCodeControllerProvider).valueOrNull,
-      "BS-CS-2A",
-    );
-  });
-
   test(
-    "reschedules reminders from cached timetable when the selected section changes",
+    "syncSelectedSection schedules reminders for the selected cached timetable",
     () async {
       SharedPreferences.setMockInitialValues({});
       final preferences = await SharedPreferences.getInstance();
       final storage = SharedPreferencesAppStorage(preferences);
       final scheduler = _FakeReminderScheduler();
+      final coordinator = ReminderSyncCoordinator(
+        storage: storage,
+        scheduler: scheduler,
+      );
 
+      await storage.writeSelectedSectionCode("BS-CS-2A");
       await storage.writeReminderPreferences(
         const ReminderPreferences(
           enabled: true,
@@ -61,37 +29,87 @@ void main() {
       );
       await storage.writeSectionTimetable(_sectionTimetable);
 
-      final container = ProviderContainer(
-        overrides: [
-          appConfigProvider.overrideWithValue(
-            const AppConfig(
-              apiBaseUrl: "http://localhost:8787",
-              appFlavor: "test",
-            ),
-          ),
-          appStorageProvider.overrideWithValue(storage),
-          reminderSchedulerProvider.overrideWithValue(scheduler),
-        ],
-      );
-      addTearDown(container.dispose);
+      await coordinator.syncSelectedSection();
 
-      await container.read(selectedSectionCodeControllerProvider.future);
-      await container
-          .read(selectedSectionCodeControllerProvider.notifier)
-          .selectSection("BS-CS-2A");
-
+      expect(scheduler.cancelAllCallCount, 0);
       expect(scheduler.replaceScheduleCallCount, 1);
+      expect(scheduler.lastScheduledReminders, hasLength(1));
       expect(scheduler.lastScheduledReminders.single.sectionCode, "BS-CS-2A");
     },
   );
+
+  test("syncSelectedSection cancels reminders when preferences are disabled",
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final preferences = await SharedPreferences.getInstance();
+    final storage = SharedPreferencesAppStorage(preferences);
+    final scheduler = _FakeReminderScheduler();
+    final coordinator = ReminderSyncCoordinator(
+      storage: storage,
+      scheduler: scheduler,
+    );
+
+    await storage.writeSelectedSectionCode("BS-CS-2A");
+    await storage.writeReminderPreferences(
+      const ReminderPreferences(
+        enabled: false,
+        leadTime: ReminderLeadTime.tenMinutes,
+      ),
+    );
+    await storage.writeSectionTimetable(_sectionTimetable);
+
+    await coordinator.syncSelectedSection();
+
+    expect(scheduler.cancelAllCallCount, 1);
+    expect(scheduler.replaceScheduleCallCount, 0);
+  });
+
+  test("syncForSectionTimetable ignores timetables for non-selected sections",
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final preferences = await SharedPreferences.getInstance();
+    final storage = SharedPreferencesAppStorage(preferences);
+    final scheduler = _FakeReminderScheduler();
+    final coordinator = ReminderSyncCoordinator(
+      storage: storage,
+      scheduler: scheduler,
+    );
+
+    await storage.writeSelectedSectionCode("BS-CS-2A");
+    await storage.writeReminderPreferences(
+      const ReminderPreferences(
+        enabled: true,
+        leadTime: ReminderLeadTime.tenMinutes,
+      ),
+    );
+
+    await coordinator.syncForSectionTimetable(
+      sectionCode: "BS-CS-4B",
+      timetable: _sectionTimetable.copyWith(
+        section: const SectionDetail(
+          sectionCode: "BS-CS-4B",
+          displayName: "BS-CS-4B",
+          active: true,
+          meetingCount: 1,
+          timetableVersion: _version,
+        ),
+      ),
+    );
+
+    expect(scheduler.cancelAllCallCount, 0);
+    expect(scheduler.replaceScheduleCallCount, 0);
+  });
 }
 
 class _FakeReminderScheduler implements ReminderScheduler {
+  int cancelAllCallCount = 0;
   int replaceScheduleCallCount = 0;
   List<ScheduledReminder> lastScheduledReminders = const [];
 
   @override
-  Future<void> cancelAll() async {}
+  Future<void> cancelAll() async {
+    cancelAllCallCount += 1;
+  }
 
   @override
   Future<ReminderPermissionStatus> getPermissionStatus() async {

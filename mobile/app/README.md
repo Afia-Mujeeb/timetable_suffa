@@ -2,21 +2,22 @@
 
 Flutter 3 client for the timetable rewrite.
 
-## What Sprint 4 Delivers
+## What Sprint 5 Delivers
 
 - explicit section-first onboarding with searchable selection and local persistence
-- a gated app flow that keeps students out of the main timetable experience until a section is chosen
-- a `Today` screen with current class, next class, no-class-day handling, and stale-cache messaging
-- a dedicated `Week` screen that preserves the timetable’s day/slot structure instead of forcing a generic calendar
-- cache-backed Worker API reads so previously fetched sections and timetables still load when connectivity is poor
-- settings actions for changing section and clearing local cache
+- `Today` and `Week` timetable views backed by cached Worker API reads
+- local class reminders derived from the selected section timetable instead of backend per-class pushes
+- reminder preferences for enable/disable and lead-time selection in Settings
+- stable reminder identifiers so repeated refreshes reschedule cleanly without duplicating notifications
+- permission-aware scheduling backed by `flutter_local_notifications`
 
 ## Architecture Notes
 
-- Riverpod owns runtime config, storage, API client, and selected-section state
+- Riverpod owns runtime config, storage, API client, selected-section state, and reminder preferences
 - GoRouter splits onboarding from the selected-section shell
-- `SharedPreferences` stores the selected section, last seen version, cached section list, and cached section timetables
-- schedule summary logic for today/current/next calculations lives in `lib/features/home/home_schedule_summary.dart`
+- `SharedPreferences` stores the selected section, last seen version, cached section list, cached section timetables, and reminder preferences
+- reminder coordination lives under `lib/data/reminders/` so repository refreshes and section changes can resync reminders without widget-local side effects
+- shared schedule occurrence helpers live in `lib/features/schedule/schedule_occurrences.dart`
 
 ## Runtime Configuration
 
@@ -33,6 +34,12 @@ flutter build web --release --dart-define=API_BASE_URL=https://api.example.com -
 ```
 
 For Android emulators, replace `127.0.0.1` with `10.0.2.2` when targeting a locally running Worker.
+
+## Reminder Notes
+
+- Android scheduling now relies on `flutter_local_notifications` `21.0.0`, `flutter_timezone` `5.0.2`, and `timezone` `0.11.0`.
+- Android manifest and Gradle configuration include the notification permission, reboot receiver wiring, and Java 17 desugaring required by the scheduling plugin.
+- Reminder preferences survive the "Clear local cache" action; cached timetable payloads and section selection do not.
 
 ## Verification
 

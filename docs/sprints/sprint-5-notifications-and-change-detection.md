@@ -218,3 +218,4 @@ Sprint 6 should inherit:
 
 - definition of a material timetable change
 - notification-sensitive versioning behavior
+- section-topic push strategy and message rules documented in `docs/notifications/push-strategy.md`

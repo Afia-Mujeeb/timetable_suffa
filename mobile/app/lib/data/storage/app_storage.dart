@@ -1,4 +1,5 @@
 import "package:timetable_app/data/models/timetable_models.dart";
+import "package:timetable_app/data/models/reminder_models.dart";
 
 abstract interface class AppStorage {
   Future<String?> readSelectedSectionCode();
@@ -16,6 +17,10 @@ abstract interface class AppStorage {
   Future<SectionTimetable?> readSectionTimetable(String sectionCode);
 
   Future<void> writeSectionTimetable(SectionTimetable timetable);
+
+  Future<ReminderPreferences> readReminderPreferences();
+
+  Future<void> writeReminderPreferences(ReminderPreferences preferences);
 
   Future<void> clear();
 }

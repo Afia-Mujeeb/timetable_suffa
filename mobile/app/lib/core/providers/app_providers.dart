@@ -1,8 +1,14 @@
+import "package:flutter/foundation.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:http/http.dart" as http;
 import "package:timetable_app/core/config/app_config.dart";
 import "package:timetable_app/data/api/timetable_api_client.dart";
+import "package:timetable_app/data/models/reminder_models.dart";
 import "package:timetable_app/data/models/timetable_models.dart";
+import "package:timetable_app/data/reminders/flutter_local_notifications_reminder_scheduler.dart";
+import "package:timetable_app/data/reminders/noop_reminder_scheduler.dart";
+import "package:timetable_app/data/reminders/reminder_scheduler.dart";
+import "package:timetable_app/data/reminders/reminder_sync_coordinator.dart";
 import "package:timetable_app/data/repositories/timetable_repository.dart";
 import "package:timetable_app/data/storage/app_storage.dart";
 
@@ -27,10 +33,32 @@ final timetableApiClientProvider = Provider<TimetableApiClient>((ref) {
   );
 });
 
+final reminderSchedulerProvider = Provider<ReminderScheduler>((ref) {
+  if (kIsWeb) {
+    return const NoopReminderScheduler();
+  }
+
+  return switch (defaultTargetPlatform) {
+    TargetPlatform.android ||
+    TargetPlatform.iOS =>
+      FlutterLocalNotificationsReminderScheduler(),
+    _ => const NoopReminderScheduler(),
+  };
+});
+
+final reminderSyncCoordinatorProvider =
+    Provider<ReminderSyncCoordinator>((ref) {
+  return ReminderSyncCoordinator(
+    storage: ref.watch(appStorageProvider),
+    scheduler: ref.watch(reminderSchedulerProvider),
+  );
+});
+
 final timetableRepositoryProvider = Provider<TimetableRepository>((ref) {
   return LiveTimetableRepository(
     apiClient: ref.watch(timetableApiClientProvider),
     storage: ref.watch(appStorageProvider),
+    reminderSyncCoordinator: ref.watch(reminderSyncCoordinatorProvider),
   );
 });
 
@@ -40,50 +68,60 @@ final sectionsProvider = FutureProvider<SectionsSnapshot>((ref) async {
 
 final selectedSectionCodeControllerProvider =
     AsyncNotifierProvider<SelectedSectionCodeController, String?>(
-      SelectedSectionCodeController.new,
-    );
+  SelectedSectionCodeController.new,
+);
 
 final selectedSectionSummaryProvider =
     Provider<AsyncValue<SectionSummary?>>((ref) {
-      final sectionsAsync = ref.watch(sectionsProvider);
-      final selectedSectionCodeAsync = ref.watch(
-        selectedSectionCodeControllerProvider,
-      );
+  final sectionsAsync = ref.watch(sectionsProvider);
+  final selectedSectionCodeAsync = ref.watch(
+    selectedSectionCodeControllerProvider,
+  );
 
-      return sectionsAsync.whenData((snapshot) {
-        final selectedSectionCode = selectedSectionCodeAsync.valueOrNull;
-        if (selectedSectionCode == null) {
-          return null;
-        }
+  return sectionsAsync.whenData((snapshot) {
+    final selectedSectionCode = selectedSectionCodeAsync.valueOrNull;
+    if (selectedSectionCode == null) {
+      return null;
+    }
 
-        for (final section in snapshot.sections) {
-          if (section.sectionCode == selectedSectionCode) {
-            return section;
-          }
-        }
+    for (final section in snapshot.sections) {
+      if (section.sectionCode == selectedSectionCode) {
+        return section;
+      }
+    }
 
-        return null;
-      });
-    });
+    return null;
+  });
+});
 
 final selectedSectionTimetableProvider =
     FutureProvider<SectionTimetable?>((ref) async {
-      final selectedSectionCode = await ref.watch(
-        selectedSectionCodeControllerProvider.future,
-      );
+  final selectedSectionCode = await ref.watch(
+    selectedSectionCodeControllerProvider.future,
+  );
 
-      if (selectedSectionCode == null || selectedSectionCode.isEmpty) {
-        return null;
-      }
+  if (selectedSectionCode == null || selectedSectionCode.isEmpty) {
+    return null;
+  }
 
-      return ref
-          .watch(timetableRepositoryProvider)
-          .fetchSectionTimetable(selectedSectionCode);
-    });
+  return ref
+      .watch(timetableRepositoryProvider)
+      .fetchSectionTimetable(selectedSectionCode);
+});
 
 final lastSeenVersionIdProvider = FutureProvider<String?>((ref) {
   return ref.watch(appStorageProvider).readLastSeenVersionId();
 });
+
+final reminderPermissionStatusProvider =
+    FutureProvider<ReminderPermissionStatus>((ref) {
+  return ref.watch(reminderSchedulerProvider).getPermissionStatus();
+});
+
+final reminderPreferencesControllerProvider =
+    AsyncNotifierProvider<ReminderPreferencesController, ReminderPreferences>(
+  ReminderPreferencesController.new,
+);
 
 class SelectedSectionCodeController extends AsyncNotifier<String?> {
   @override
@@ -93,6 +131,54 @@ class SelectedSectionCodeController extends AsyncNotifier<String?> {
 
   Future<void> selectSection(String? sectionCode) async {
     state = AsyncValue.data(sectionCode);
-    await ref.watch(appStorageProvider).writeSelectedSectionCode(sectionCode);
+    await ref.read(appStorageProvider).writeSelectedSectionCode(sectionCode);
+    await ref.read(reminderSyncCoordinatorProvider).syncSelectedSection();
+  }
+}
+
+class ReminderPreferencesController extends AsyncNotifier<ReminderPreferences> {
+  @override
+  Future<ReminderPreferences> build() {
+    return ref.watch(appStorageProvider).readReminderPreferences();
+  }
+
+  Future<ReminderPermissionStatus> requestPermissions() async {
+    final status =
+        await ref.read(reminderSchedulerProvider).requestPermissions();
+    ref.invalidate(reminderPermissionStatusProvider);
+    await ref.read(reminderSyncCoordinatorProvider).syncSelectedSection();
+    return status;
+  }
+
+  Future<void> setLeadTime(ReminderLeadTime leadTime) async {
+    final preferences = (state.valueOrNull ?? await future).copyWith(
+      leadTime: leadTime,
+    );
+
+    await _persistPreferences(preferences);
+  }
+
+  Future<ReminderPermissionStatus> setRemindersEnabled(bool enabled) async {
+    final preferences = (state.valueOrNull ?? await future).copyWith(
+      enabled: enabled,
+    );
+    await _persistPreferences(preferences);
+
+    var permissionStatus =
+        await ref.read(reminderSchedulerProvider).getPermissionStatus();
+    if (enabled && permissionStatus != ReminderPermissionStatus.granted) {
+      permissionStatus =
+          await ref.read(reminderSchedulerProvider).requestPermissions();
+    }
+
+    ref.invalidate(reminderPermissionStatusProvider);
+    await ref.read(reminderSyncCoordinatorProvider).syncSelectedSection();
+    return permissionStatus;
+  }
+
+  Future<void> _persistPreferences(ReminderPreferences preferences) async {
+    state = AsyncValue.data(preferences);
+    await ref.read(appStorageProvider).writeReminderPreferences(preferences);
+    await ref.read(reminderSyncCoordinatorProvider).syncSelectedSection();
   }
 }

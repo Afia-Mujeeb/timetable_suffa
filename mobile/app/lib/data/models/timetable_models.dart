@@ -5,9 +5,7 @@ List<String> _readStringList(Object? value) {
     return const [];
   }
 
-  return value
-      .whereType<String>()
-      .toList(growable: false);
+  return value.whereType<String>().toList(growable: false);
 }
 
 enum DayKey {
@@ -92,9 +90,8 @@ class SectionSummary {
 
   factory SectionSummary.fromJson(JsonMap json) {
     return SectionSummary(
-      sectionCode: json["sectionCode"] as String? ??
-          json["code"] as String? ??
-          "",
+      sectionCode:
+          json["sectionCode"] as String? ?? json["code"] as String? ?? "",
       displayName: json["displayName"] as String? ?? "",
       active: json["active"] as bool? ?? false,
       meetingCount: json["meetingCount"] as int? ?? 0,

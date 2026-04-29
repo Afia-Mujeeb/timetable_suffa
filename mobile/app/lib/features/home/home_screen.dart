@@ -5,6 +5,7 @@ import "package:timetable_app/core/providers/app_providers.dart";
 import "package:timetable_app/data/api/api_exception.dart";
 import "package:timetable_app/data/models/timetable_models.dart";
 import "package:timetable_app/features/home/home_schedule_summary.dart";
+import "package:timetable_app/features/schedule/schedule_occurrences.dart";
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -60,7 +61,8 @@ class HomeScreen extends ConsumerWidget {
               },
               loading: () => const _LoadingCard(
                 title: "Loading timetable",
-                message: "Checking the latest schedule for the selected section.",
+                message:
+                    "Checking the latest schedule for the selected section.",
               ),
               error: (error, stackTrace) => _ErrorStateCard(
                 title: "Could not load timetable",
@@ -112,7 +114,8 @@ class HomeScreen extends ConsumerWidget {
                       dayLabel: dayLabel,
                     ),
                     const SizedBox(height: 16),
-                    _QuickActionsCard(sectionCode: timetable.section.sectionCode),
+                    _QuickActionsCard(
+                        sectionCode: timetable.section.sectionCode),
                   ],
                 );
               },
@@ -429,18 +432,19 @@ class _TodayScheduleCard extends StatelessWidget {
                     "No classes are scheduled today. Use the week view to scan the rest of the timetable.",
               )
             else
-              for (var index = 0; index < summary.todayMeetings.length; index++)
-                ...[
-                  _MeetingTile(
-                    occurrence: summary.todayMeetings[index],
-                    highlightCurrent:
-                        summary.currentMeeting == summary.todayMeetings[index],
-                    highlightNext:
-                        summary.nextMeeting == summary.todayMeetings[index],
-                  ),
-                  if (index < summary.todayMeetings.length - 1)
-                    const Divider(height: 24),
-                ],
+              for (var index = 0;
+                  index < summary.todayMeetings.length;
+                  index++) ...[
+                _MeetingTile(
+                  occurrence: summary.todayMeetings[index],
+                  highlightCurrent:
+                      summary.currentMeeting == summary.todayMeetings[index],
+                  highlightNext:
+                      summary.nextMeeting == summary.todayMeetings[index],
+                ),
+                if (index < summary.todayMeetings.length - 1)
+                  const Divider(height: 24),
+              ],
           ],
         ),
       ),
@@ -626,9 +630,7 @@ class _CacheBanner extends StatelessWidget {
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                freshness == null
-                    ? message
-                    : "$message Cached at $freshness.",
+                freshness == null ? message : "$message Cached at $freshness.",
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
             ),

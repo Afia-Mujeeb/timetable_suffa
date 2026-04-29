@@ -4,6 +4,7 @@ import type {
   PublishStatus,
   SectionRecord,
   TimetableVersionRecord,
+  VersionMeetingSnapshot,
 } from "./types";
 
 type VersionRow = DatabaseRow & {
@@ -46,6 +47,25 @@ type MeetingRow = DatabaseRow & {
   source_page: number;
   confidence_class: MeetingRecord["confidenceClass"];
   confidence_score: number;
+  warnings_json: string;
+};
+
+type VersionMeetingSnapshotRow = DatabaseRow & {
+  section_code: string;
+  section_display_name: string;
+  course_name: string;
+  instructor_name: string | null;
+  room_label: string | null;
+  day_label: string;
+  day_key: MeetingRecord["dayKey"];
+  slot_start: number;
+  slot_end: number;
+  start_time: string;
+  end_time: string;
+  meeting_type: MeetingRecord["meetingType"];
+  online: number;
+  source_page: number;
+  confidence_class: MeetingRecord["confidenceClass"];
   warnings_json: string;
 };
 
@@ -101,6 +121,29 @@ function mapMeeting(row: MeetingRow): MeetingRecord {
     sourcePage: row.source_page,
     confidenceClass: row.confidence_class,
     confidenceScore: row.confidence_score,
+    warnings: parseJsonArray(row.warnings_json),
+  };
+}
+
+function mapVersionMeetingSnapshot(
+  row: VersionMeetingSnapshotRow,
+): VersionMeetingSnapshot {
+  return {
+    sectionCode: row.section_code,
+    sectionDisplayName: row.section_display_name,
+    courseName: row.course_name,
+    instructorName: row.instructor_name,
+    roomLabel: row.room_label,
+    dayLabel: row.day_label,
+    dayKey: row.day_key,
+    slotStart: row.slot_start,
+    slotEnd: row.slot_end,
+    startTime: row.start_time,
+    endTime: row.end_time,
+    meetingType: row.meeting_type,
+    online: row.online === 1,
+    sourcePage: row.source_page,
+    confidenceClass: row.confidence_class,
     warnings: parseJsonArray(row.warnings_json),
   };
 }
@@ -574,5 +617,43 @@ export class ClassMeetingRepository {
     );
 
     return rows.map(mapMeeting);
+  }
+
+  async listVersionSnapshot(
+    versionId: string,
+  ): Promise<VersionMeetingSnapshot[]> {
+    const rows = await this.database.queryAll<VersionMeetingSnapshotRow>(
+      `SELECT
+        sections.code AS section_code,
+        sections.display_name AS section_display_name,
+        courses.name AS course_name,
+        instructors.name AS instructor_name,
+        rooms.label AS room_label,
+        class_meetings.day_label,
+        class_meetings.day_key,
+        class_meetings.slot_start,
+        class_meetings.slot_end,
+        class_meetings.start_time,
+        class_meetings.end_time,
+        class_meetings.meeting_type,
+        class_meetings.online,
+        class_meetings.source_page,
+        class_meetings.confidence_class,
+        class_meetings.warnings_json
+      FROM class_meetings
+      INNER JOIN sections
+        ON sections.id = class_meetings.section_id
+      INNER JOIN courses
+        ON courses.id = class_meetings.course_id
+      LEFT JOIN instructors
+        ON instructors.id = class_meetings.instructor_id
+      LEFT JOIN rooms
+        ON rooms.id = class_meetings.room_id
+      WHERE class_meetings.version_id = ?
+      ORDER BY sections.code ASC, class_meetings.day_sort ASC, class_meetings.slot_start ASC, class_meetings.start_time ASC, courses.name ASC`,
+      [versionId],
+    );
+
+    return rows.map(mapVersionMeetingSnapshot);
   }
 }

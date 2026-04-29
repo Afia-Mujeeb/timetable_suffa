@@ -1,5 +1,6 @@
 import { AppError } from "./errors";
 import type { DatabaseClient } from "./db";
+import { summarizeVersionChanges } from "./diff";
 import {
   ClassMeetingRepository,
   CourseRepository,
@@ -183,6 +184,25 @@ export class TimetableImportService {
       throw new AppError("not_found", `Version ${versionId} does not exist.`);
     }
 
+    const previousPublishedVersion = await this.versions.getCurrent();
+    const nextSnapshotPromise = this.meetings.listVersionSnapshot(versionId);
+    const previousSnapshotPromise =
+      previousPublishedVersion === null
+        ? Promise.resolve([])
+        : previousPublishedVersion.id === versionId
+          ? nextSnapshotPromise
+          : this.meetings.listVersionSnapshot(previousPublishedVersion.id);
+    const [previousSnapshot, nextSnapshot] = await Promise.all([
+      previousSnapshotPromise,
+      nextSnapshotPromise,
+    ]);
+    const changes = summarizeVersionChanges({
+      previousVersionId: previousPublishedVersion?.id ?? null,
+      nextVersionId: versionId,
+      previousMeetings: previousSnapshot,
+      nextMeetings: nextSnapshot,
+    });
+
     await this.versions.archivePublishedVersions();
     const publishedAt = nowIso();
     await this.versions.markPublished(versionId, publishedAt);
@@ -198,6 +218,10 @@ export class TimetableImportService {
 
     return {
       timetableVersion: toVersionResponse(publishedVersion),
+      previousVersion: previousPublishedVersion
+        ? toVersionResponse(previousPublishedVersion)
+        : null,
+      changes,
     };
   }
 }

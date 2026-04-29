@@ -97,6 +97,74 @@ export type MeetingRecord = {
   warnings: string[];
 };
 
+export type VersionMeetingSnapshot = {
+  sectionCode: string;
+  sectionDisplayName: string;
+  courseName: string;
+  instructorName: string | null;
+  roomLabel: string | null;
+  dayLabel: string;
+  dayKey: DayKey;
+  slotStart: number;
+  slotEnd: number;
+  startTime: string;
+  endTime: string;
+  meetingType: MeetingType;
+  online: boolean;
+  sourcePage: number;
+  confidenceClass: ConfidenceClass;
+  warnings: string[];
+};
+
+export type MeetingChangeKind =
+  | "added"
+  | "removed"
+  | "day_changed"
+  | "time_changed"
+  | "room_changed"
+  | "online_changed"
+  | "instructor_changed"
+  | "meeting_type_changed";
+
+export type SectionMeetingChange = {
+  meetingKey: string;
+  courseName: string;
+  changeKinds: MeetingChangeKind[];
+  material: boolean;
+  message: string;
+  previousMeeting: TimetableMeetingResponse | null;
+  nextMeeting: TimetableMeetingResponse | null;
+};
+
+export type SectionVersionDiff = {
+  sectionCode: string;
+  displayName: string;
+  changeCount: number;
+  addedCount: number;
+  removedCount: number;
+  modifiedCount: number;
+  materialChangeCount: number;
+  changes: SectionMeetingChange[];
+};
+
+export type VersionChangeSummary = {
+  sectionsCompared: number;
+  sectionsChanged: number;
+  materialSections: number;
+  totalChanges: number;
+  addedCount: number;
+  removedCount: number;
+  modifiedCount: number;
+  materialChangeCount: number;
+};
+
+export type VersionComparisonResult = {
+  fromVersionId: string | null;
+  toVersionId: string;
+  summary: VersionChangeSummary;
+  sections: SectionVersionDiff[];
+};
+
 export type TimetableMeetingResponse = {
   courseName: string;
   instructor: string | null;
@@ -159,4 +227,6 @@ export type ImportResult = {
 
 export type PublishResult = {
   timetableVersion: TimetableVersionResponse;
+  previousVersion: TimetableVersionResponse | null;
+  changes: VersionComparisonResult;
 };

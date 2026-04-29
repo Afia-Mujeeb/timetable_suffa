@@ -1,6 +1,7 @@
 import "dart:convert";
 
 import "package:shared_preferences/shared_preferences.dart";
+import "package:timetable_app/data/models/reminder_models.dart";
 import "package:timetable_app/data/models/timetable_models.dart";
 import "package:timetable_app/data/storage/app_storage.dart";
 
@@ -11,6 +12,7 @@ class SharedPreferencesAppStorage implements AppStorage {
   static const String _lastSeenVersionIdKey = "last_seen_version_id";
   static const String _sectionsSnapshotKey = "sections_snapshot";
   static const String _timetablePrefix = "section_timetable_";
+  static const String _reminderPreferencesKey = "reminder_preferences";
 
   final SharedPreferences _preferences;
 
@@ -62,6 +64,18 @@ class SharedPreferencesAppStorage implements AppStorage {
   }
 
   @override
+  Future<ReminderPreferences> readReminderPreferences() async {
+    final value = _preferences.getString(_reminderPreferencesKey);
+    if (value == null || value.isEmpty) {
+      return ReminderPreferences.defaults;
+    }
+
+    return ReminderPreferences.fromJson(
+      jsonDecode(value) as Map<String, dynamic>,
+    );
+  }
+
+  @override
   Future<void> writeLastSeenVersionId(String? versionId) async {
     if (versionId == null || versionId.isEmpty) {
       await _preferences.remove(_lastSeenVersionIdKey);
@@ -94,6 +108,14 @@ class SharedPreferencesAppStorage implements AppStorage {
     await _preferences.setString(
       _sectionsSnapshotKey,
       jsonEncode(payload.toJson()),
+    );
+  }
+
+  @override
+  Future<void> writeReminderPreferences(ReminderPreferences preferences) async {
+    await _preferences.setString(
+      _reminderPreferencesKey,
+      jsonEncode(preferences.toJson()),
     );
   }
 

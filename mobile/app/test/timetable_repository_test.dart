@@ -1,3 +1,4 @@
+import "dart:convert";
 import "dart:io";
 
 import "package:flutter_test/flutter_test.dart";
@@ -5,7 +6,11 @@ import "package:http/http.dart" as http;
 import "package:http/testing.dart";
 import "package:shared_preferences/shared_preferences.dart";
 import "package:timetable_app/data/api/timetable_api_client.dart";
+import "package:timetable_app/data/models/reminder_models.dart";
 import "package:timetable_app/data/models/timetable_models.dart";
+import "package:timetable_app/data/reminders/reminder_schedule.dart";
+import "package:timetable_app/data/reminders/reminder_scheduler.dart";
+import "package:timetable_app/data/reminders/reminder_sync_coordinator.dart";
 import "package:timetable_app/data/repositories/timetable_repository.dart";
 import "package:timetable_app/data/storage/shared_preferences_app_storage.dart";
 
@@ -33,7 +38,8 @@ void main() {
     expect(snapshot.cachedAt, isNotNull);
   });
 
-  test("falls back to cached timetable when the HTTP client cannot connect", () async {
+  test("falls back to cached timetable when the HTTP client cannot connect",
+      () async {
     SharedPreferences.setMockInitialValues({});
     final preferences = await SharedPreferences.getInstance();
     final storage = SharedPreferencesAppStorage(preferences);
@@ -56,6 +62,88 @@ void main() {
     expect(timetable.meetings.single.courseName, "Compiler Construction");
     expect(timetable.cachedAt, isNotNull);
   });
+
+  test(
+    "reschedules reminders with stable ids when the selected timetable refreshes",
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final preferences = await SharedPreferences.getInstance();
+      final storage = SharedPreferencesAppStorage(preferences);
+      final scheduler = _FakeReminderScheduler();
+
+      await storage.writeSelectedSectionCode("BS-CS-2A");
+      await storage.writeReminderPreferences(
+        const ReminderPreferences(
+          enabled: true,
+          leadTime: ReminderLeadTime.tenMinutes,
+        ),
+      );
+
+      final repository = LiveTimetableRepository(
+        apiClient: TimetableApiClient(
+          baseUrl: "http://localhost:8787",
+          httpClient: MockClient((request) async {
+            return http.Response(
+              jsonEncode({
+                "section": _sectionTimetable.section.toJson(),
+                "timetableVersion": _sectionTimetable.timetableVersion.toJson(),
+                "meetings": _sectionTimetable.meetings
+                    .map((meeting) => meeting.toJson())
+                    .toList(growable: false),
+              }),
+              200,
+              headers: {"content-type": "application/json"},
+            );
+          }),
+        ),
+        storage: storage,
+        reminderSyncCoordinator: ReminderSyncCoordinator(
+          storage: storage,
+          scheduler: scheduler,
+        ),
+      );
+
+      await repository.fetchSectionTimetable("BS-CS-2A");
+      final firstReminderIds = scheduler.lastScheduledReminders
+          .map((reminder) => reminder.id)
+          .toList(growable: false);
+
+      await repository.fetchSectionTimetable("BS-CS-2A");
+
+      expect(scheduler.replaceScheduleCallCount, 2);
+      expect(scheduler.lastScheduledReminders, hasLength(1));
+      expect(
+        scheduler.lastScheduledReminders
+            .map((reminder) => reminder.id)
+            .toList(growable: false),
+        firstReminderIds,
+      );
+    },
+  );
+}
+
+class _FakeReminderScheduler implements ReminderScheduler {
+  int replaceScheduleCallCount = 0;
+  List<ScheduledReminder> lastScheduledReminders = const [];
+
+  @override
+  Future<void> cancelAll() async {}
+
+  @override
+  Future<ReminderPermissionStatus> getPermissionStatus() async {
+    return ReminderPermissionStatus.granted;
+  }
+
+  @override
+  Future<void> replaceSchedule(List<ScheduledReminder> reminders) async {
+    replaceScheduleCallCount += 1;
+    lastScheduledReminders = reminders;
+  }
+
+  @override
+  Future<ReminderPermissionStatus> requestPermissions() async {
+    return ReminderPermissionStatus.granted;
+  }
 }
 
 const _version = TimetableVersion(

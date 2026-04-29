@@ -135,9 +135,9 @@ class _SectionPickerScreenState extends ConsumerState<SectionPickerScreen> {
     });
 
     try {
-      await ref.read(appStorageProvider).writeSelectedSectionCode(sectionCode);
-      ref.invalidate(selectedSectionCodeControllerProvider);
-      ref.invalidate(selectedSectionTimetableProvider);
+      await ref
+          .read(selectedSectionCodeControllerProvider.notifier)
+          .selectSection(sectionCode);
       widget.onConfirmed?.call(sectionCode);
     } finally {
       if (mounted) {

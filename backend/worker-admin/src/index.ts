@@ -220,11 +220,16 @@ export function createApp(): Hono<{
       requestId: getRequestId(context),
       versionId: result.timetableVersion.versionId,
       publishedAt: result.timetableVersion.publishedAt,
+      previousVersionId: result.previousVersion?.versionId ?? null,
+      changedSectionCount: result.changes.summary.sectionsChanged,
+      totalChangeCount: result.changes.summary.totalChanges,
     });
 
     return context.json({
       requestId: getRequestId(context),
       version: result.timetableVersion,
+      previousVersion: result.previousVersion,
+      changes: result.changes,
     });
   });
 

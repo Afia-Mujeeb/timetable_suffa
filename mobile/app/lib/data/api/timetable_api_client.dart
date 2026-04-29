@@ -24,7 +24,8 @@ class TimetableApiClient {
 
   Future<SectionTimetable> fetchSectionTimetable(String sectionCode) async {
     final encodedSectionCode = Uri.encodeComponent(sectionCode);
-    final payload = await _getJson("/v1/sections/$encodedSectionCode/timetable");
+    final payload =
+        await _getJson("/v1/sections/$encodedSectionCode/timetable");
 
     return SectionTimetable.fromApiJson(payload);
   }
@@ -40,9 +41,8 @@ class TimetableApiClient {
     final dynamic decoded = response.body.isEmpty
         ? const <String, dynamic>{}
         : jsonDecode(response.body);
-    final payload = decoded is Map<String, dynamic>
-        ? decoded
-        : <String, dynamic>{};
+    final payload =
+        decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final errorBody = payload["error"];

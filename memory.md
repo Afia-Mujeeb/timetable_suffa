@@ -38,6 +38,15 @@ Last updated: 2026-04-29
 - Expanded mobile tests with section-picker widget coverage, schedule-summary unit coverage, offline repository fallback coverage, and an updated app-shell widget test aligned to the new Sprint 4 flow.
 - Updated `mobile/app/README.md` to document the shipped Sprint 4 experience and current architecture boundaries.
 
+## Sprint 5 outcome
+
+- Added a shared backend version diff engine under `backend/shared/src/timetable/diff.ts` that compares per-version meeting snapshots, classifies added/removed/updated section changes, and emits publish-time change summaries with user-facing change messages.
+- Expanded the admin publish flow so `POST /v1/versions/:versionId/publish` now returns the previously published version plus a structured `changes` payload for first-publish bootstrap events and later section-scoped timetable diffs.
+- Added local reminder scheduling to `mobile/app` with reminder preferences, stable reminder identifiers, shared schedule-occurrence helpers, and a `flutter_local_notifications`-backed scheduler that resyncs on section changes and timetable refreshes.
+- Updated mobile platform wiring for reminder delivery, including Android notification permission and boot receivers, Android desugaring support, iOS notification delegate registration, and generated plugin registrants for desktop/mobile builds.
+- Added reminder-focused tests covering stable identifiers, coordinator resync behavior, repository-triggered rescheduling, cache-clear preference persistence, and the updated section-picker flow.
+- Added `docs/notifications/push-strategy.md` to document the low-volume section-topic FCM design and change-summary messaging rules that Sprint 6 can operationalize.
+
 ## Verified toolchain on this machine
 
 - Git `2.54.0.windows.1`
@@ -56,6 +65,8 @@ Last updated: 2026-04-29
 - The golden parser artifact still carries one known warning: `normalized_domain/meetings/160: missing room on non-online meeting`, which corresponds to `BS-CS-MISC 3` page `25` where the source PDF does not show a room line for `Computer Networks`.
 - The backend Workers now expect a real shared D1 database binding and, for protected admin writes, a real `IMPORT_SHARED_SECRET`; the committed Wrangler configs still use placeholder Cloudflare database IDs.
 - The mobile app defaults to `http://127.0.0.1:8787`; real runs still need the correct `API_BASE_URL` via `--dart-define`, and Android emulator runs should use `10.0.2.2` for a local Worker.
+- Section-scoped push delivery is still design-only in Sprint 5; the repo now defines the backend diff output and FCM topic strategy, but actual device subscription and publish-time fan-out remain Sprint 6 work.
+- The current reminder implementation is intentionally active on Android and iOS only; non-mobile platforms fall back to a no-op reminder scheduler.
 
 ## Verification commands that passed
 
@@ -77,3 +88,6 @@ Last updated: 2026-04-29
 - `pnpm --dir backend/worker-admin test`
 - `pnpm --dir backend/worker-admin typecheck`
 - `pnpm --dir backend/worker-admin lint`
+- `pnpm run lint:backend`
+- `pnpm run typecheck:backend`
+- `pnpm run test:backend`

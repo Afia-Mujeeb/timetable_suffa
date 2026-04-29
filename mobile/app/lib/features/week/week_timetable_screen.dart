@@ -39,7 +39,8 @@ class WeekTimetableScreen extends ConsumerWidget {
                 if (timetable == null) {
                   return const _StateCard(
                     title: "Choose a section",
-                    message: "Select a section first to load the weekly timetable.",
+                    message:
+                        "Select a section first to load the weekly timetable.",
                   );
                 }
 
