@@ -1,5 +1,5 @@
 """Timetable PDF parser package."""
 
-__all__ = ["build_placeholder_payload"]
+from .parser import DEFAULT_VERSION_ID, parse_pdf
 
-from .cli import build_placeholder_payload
+__all__ = ["DEFAULT_VERSION_ID", "parse_pdf"]

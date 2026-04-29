@@ -1,0 +1,392 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://timetable.local/schema/timetable.schema.json",
+  "title": "Timetable Parse Artifact",
+  "type": "object",
+  "required": [
+    "source",
+    "raw_extraction",
+    "structured_pages",
+    "normalized_domain",
+    "validation"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "source": {
+      "type": "object",
+      "required": [
+        "version_id",
+        "source_file_name",
+        "generated_date",
+        "page_count",
+        "sections"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "version_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_file_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "generated_date": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "page_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sections": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "raw_extraction": {
+      "type": "object",
+      "required": ["pages"],
+      "additionalProperties": false,
+      "properties": {
+        "pages": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["page_number", "extracted_lines", "parser_warnings"],
+            "additionalProperties": false,
+            "properties": {
+              "page_number": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "extracted_lines": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "parser_warnings": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "structured_pages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "page_number",
+          "section_label",
+          "page_class",
+          "source_rooms_detected",
+          "time_grid_detected",
+          "days_detected",
+          "raw_meeting_blocks",
+          "warnings"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "page_number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "section_label": {
+            "type": "string",
+            "minLength": 1
+          },
+          "page_class": {
+            "type": "string",
+            "enum": ["regular-section-page", "misc-page"]
+          },
+          "source_rooms_detected": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "time_grid_detected": {
+            "type": "array",
+            "minItems": 12,
+            "maxItems": 12,
+            "items": {
+              "type": "object",
+              "required": ["slot", "start_time", "end_time"],
+              "additionalProperties": false,
+              "properties": {
+                "slot": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 12
+                },
+                "start_time": {
+                  "type": "string",
+                  "pattern": "^\\d{2}:\\d{2}$"
+                },
+                "end_time": {
+                  "type": "string",
+                  "pattern": "^\\d{2}:\\d{2}$"
+                }
+              }
+            }
+          },
+          "days_detected": {
+            "type": "array",
+            "minItems": 6,
+            "maxItems": 6,
+            "items": {
+              "type": "object",
+              "required": ["day", "day_key", "label", "online"],
+              "additionalProperties": false,
+              "properties": {
+                "day": {
+                  "type": "string"
+                },
+                "day_key": {
+                  "type": "string",
+                  "enum": [
+                    "monday",
+                    "tuesday",
+                    "wednesday",
+                    "thursday",
+                    "friday",
+                    "saturday"
+                  ]
+                },
+                "label": {
+                  "type": "string"
+                },
+                "online": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "raw_meeting_blocks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "day",
+                "day_key",
+                "slot_start",
+                "slot_end",
+                "bounds",
+                "text_lines",
+                "warnings"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "day": {
+                  "type": "string"
+                },
+                "day_key": {
+                  "type": "string"
+                },
+                "slot_start": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 12
+                },
+                "slot_end": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 12
+                },
+                "bounds": {
+                  "type": "object",
+                  "required": ["x0", "y0", "x1", "y1"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "x0": {
+                      "type": "number"
+                    },
+                    "y0": {
+                      "type": "number"
+                    },
+                    "x1": {
+                      "type": "number"
+                    },
+                    "y1": {
+                      "type": "number"
+                    }
+                  }
+                },
+                "text_lines": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "warnings": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "normalized_domain": {
+      "type": "object",
+      "required": ["sections", "meetings"],
+      "additionalProperties": false,
+      "properties": {
+        "sections": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "meetings": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "section",
+              "course_name",
+              "instructor",
+              "room",
+              "day",
+              "day_key",
+              "online",
+              "meeting_type",
+              "slot_start",
+              "slot_end",
+              "start_time",
+              "end_time",
+              "source_page",
+              "source_version",
+              "confidence_class",
+              "confidence_score",
+              "warnings"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "section": {
+                "type": "string"
+              },
+              "course_name": {
+                "type": "string"
+              },
+              "instructor": {
+                "type": ["string", "null"]
+              },
+              "room": {
+                "type": ["string", "null"]
+              },
+              "day": {
+                "type": "string"
+              },
+              "day_key": {
+                "type": "string",
+                "enum": [
+                  "monday",
+                  "tuesday",
+                  "wednesday",
+                  "thursday",
+                  "friday",
+                  "saturday"
+                ]
+              },
+              "online": {
+                "type": "boolean"
+              },
+              "meeting_type": {
+                "type": "string",
+                "enum": ["lecture", "lab"]
+              },
+              "slot_start": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 12
+              },
+              "slot_end": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 12
+              },
+              "start_time": {
+                "type": "string",
+                "pattern": "^\\d{2}:\\d{2}$"
+              },
+              "end_time": {
+                "type": "string",
+                "pattern": "^\\d{2}:\\d{2}$"
+              },
+              "source_page": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "source_version": {
+                "type": "string"
+              },
+              "confidence_class": {
+                "type": "string",
+                "enum": ["high", "medium", "low"]
+              },
+              "confidence_score": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "warnings": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "validation": {
+      "type": "object",
+      "required": ["status", "errors", "warnings"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["passed", "failed"]
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

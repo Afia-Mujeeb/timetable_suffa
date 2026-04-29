@@ -35,6 +35,8 @@ build/
 *.egg-info/
 __pycache__/
 *.py[cod]
+tools/pdf_parser/output/
+tools/pdf_parser/tmp_*.png
 
 # Logs
 *.log
