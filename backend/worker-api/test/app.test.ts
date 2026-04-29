@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { createRateLimitGuard } from "../../shared/src/timetable/rate-limit";
 import { createSeededTestDatabase } from "../../shared/src/timetable/test-helpers";
 import { createApp } from "../src/index";
 
@@ -138,6 +139,160 @@ describe("worker-api", () => {
     await expect(response.json()).resolves.toMatchObject({
       error: {
         code: "validation_error",
+      },
+    });
+  });
+
+  it("rate limits burst traffic on public read endpoints", async () => {
+    const { d1 } = await createSeededTestDatabase();
+    const app = createApp({
+      rateLimitGuard: createRateLimitGuard([
+        {
+          blockMs: 60_000,
+          limit: 2,
+          name: "api-burst",
+          phase: "before",
+          when: (request) => request.path.startsWith("/v1/"),
+          windowMs: 60_000,
+        },
+        {
+          blockMs: 60_000,
+          limit: 10,
+          name: "api-invalid-request",
+          phase: "after",
+          matchStatus: (status) => status === 400 || status === 404,
+          when: (request) => request.path.startsWith("/v1/"),
+          windowMs: 60_000,
+        },
+      ]),
+    });
+
+    expect(
+      (
+        await app.request(
+          "http://localhost/v1/sections",
+          undefined,
+          createEnv(d1),
+        )
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await app.request(
+          "http://localhost/v1/sections",
+          undefined,
+          createEnv(d1),
+        )
+      ).status,
+    ).toBe(200);
+
+    const response = await app.request(
+      "http://localhost/v1/sections",
+      undefined,
+      createEnv(d1),
+    );
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBeTruthy();
+    await expect(response.json()).resolves.toMatchObject({
+      error: {
+        code: "rate_limited",
+        details: {
+          ruleName: "api-burst",
+        },
+      },
+    });
+  });
+
+  it("rate limits repeated invalid requests and exposes backend metrics", async () => {
+    const { d1 } = await createSeededTestDatabase();
+    const app = createApp({
+      rateLimitGuard: createRateLimitGuard([
+        {
+          blockMs: 60_000,
+          limit: 20,
+          name: "api-burst",
+          phase: "before",
+          when: (request) => request.path.startsWith("/v1/"),
+          windowMs: 60_000,
+        },
+        {
+          blockMs: 60_000,
+          limit: 2,
+          name: "api-invalid-request",
+          phase: "after",
+          matchStatus: (status) => status === 400 || status === 404,
+          when: (request) => request.path.startsWith("/v1/"),
+          windowMs: 60_000,
+        },
+      ]),
+    });
+
+    expect(
+      (
+        await app.request(
+          "http://localhost/v1/sections/%24/timetable",
+          undefined,
+          createEnv(d1),
+        )
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await app.request(
+          "http://localhost/v1/sections/BS-CS-99Z/timetable",
+          undefined,
+          createEnv(d1),
+        )
+      ).status,
+    ).toBe(404);
+
+    const limitedResponse = await app.request(
+      "http://localhost/v1/sections/%24/timetable",
+      undefined,
+      createEnv(d1),
+    );
+
+    expect(limitedResponse.status).toBe(429);
+    await expect(limitedResponse.json()).resolves.toMatchObject({
+      error: {
+        code: "rate_limited",
+        details: {
+          ruleName: "api-invalid-request",
+        },
+      },
+    });
+
+    const metricsResponse = await app.request(
+      "http://localhost/metrics",
+      undefined,
+      createEnv(d1),
+    );
+    expect(metricsResponse.status).toBe(200);
+    await expect(metricsResponse.json()).resolves.toMatchObject({
+      environment: "test",
+      service: "timetable-worker-api",
+      errors: {
+        total: 4,
+        byCode: {
+          not_found: 1,
+          rate_limited: 1,
+          validation_error: 2,
+        },
+      },
+      rateLimits: {
+        total: 1,
+        byRule: {
+          "api-invalid-request": 1,
+        },
+      },
+      requests: {
+        total: 3,
+        byStatus: {
+          "400": 1,
+          "404": 1,
+          "429": 1,
+        },
       },
     });
   });

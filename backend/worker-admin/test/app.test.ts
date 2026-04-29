@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { createRateLimitGuard } from "../../shared/src/timetable/rate-limit";
 import {
   createTestDatabase,
   applySharedMigrations,
@@ -711,5 +712,181 @@ describe("worker-admin", () => {
       env,
     );
     expect(readResponse.status).toBe(400);
+  });
+
+  it("rate limits noisy public admin status traffic", async () => {
+    const app = createApp({
+      rateLimitGuard: createRateLimitGuard([
+        {
+          blockMs: 60_000,
+          limit: 1,
+          name: "admin-burst",
+          phase: "before",
+          when: (request) =>
+            request.path !== "/health" &&
+            request.path !== "/ready" &&
+            request.path !== "/metrics",
+          windowMs: 60_000,
+        },
+        {
+          blockMs: 60_000,
+          limit: 10,
+          name: "admin-write-burst",
+          phase: "before",
+          when: (request) => request.method !== "GET",
+          windowMs: 60_000,
+        },
+        {
+          blockMs: 60_000,
+          limit: 10,
+          name: "admin-invalid-request",
+          phase: "after",
+          matchStatus: (status) => status === 400 || status === 404,
+          when: () => true,
+          windowMs: 60_000,
+        },
+      ]),
+    });
+    const env = await createAdminEnv();
+
+    expect(
+      (await app.request("http://localhost/imports/status", undefined, env)).status,
+    ).toBe(200);
+
+    const response = await app.request(
+      "http://localhost/imports/status",
+      undefined,
+      env,
+    );
+
+    expect(response.status).toBe(429);
+    await expect(response.json()).resolves.toMatchObject({
+      error: {
+        code: "rate_limited",
+        details: {
+          ruleName: "admin-burst",
+        },
+      },
+    });
+  });
+
+  it("rate limits repeated invalid admin requests and exposes backend metrics", async () => {
+    const app = createApp({
+      rateLimitGuard: createRateLimitGuard([
+        {
+          blockMs: 60_000,
+          limit: 20,
+          name: "admin-burst",
+          phase: "before",
+          when: (request) =>
+            request.path !== "/health" &&
+            request.path !== "/ready" &&
+            request.path !== "/metrics",
+          windowMs: 60_000,
+        },
+        {
+          blockMs: 60_000,
+          limit: 20,
+          name: "admin-write-burst",
+          phase: "before",
+          when: (request) => request.method !== "GET",
+          windowMs: 60_000,
+        },
+        {
+          blockMs: 60_000,
+          limit: 2,
+          name: "admin-invalid-request",
+          phase: "after",
+          matchStatus: (status) => status === 400 || status === 404,
+          when: () => true,
+          windowMs: 60_000,
+        },
+      ]),
+    });
+    const env = await createAdminEnv();
+
+    expect(
+      (
+        await app.request(
+          "http://localhost/v1/versions",
+          {
+            headers: {
+              "x-real-ip": "203.0.113.42",
+              "x-import-secret": "wrong-secret",
+            },
+          },
+          env,
+        )
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await app.request(
+          "http://localhost/v1/imports",
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-real-ip": "203.0.113.42",
+              "x-import-secret": "wrong-secret",
+            },
+            body: JSON.stringify({}),
+          },
+          env,
+        )
+      ).status,
+    ).toBe(400);
+
+    const limitedResponse = await app.request(
+      "http://localhost/v1/versions",
+      {
+        headers: {
+          "x-real-ip": "203.0.113.42",
+          "x-import-secret": "wrong-secret",
+        },
+      },
+      env,
+    );
+
+    expect(limitedResponse.status).toBe(429);
+    await expect(limitedResponse.json()).resolves.toMatchObject({
+      error: {
+        code: "rate_limited",
+        details: {
+          ruleName: "admin-invalid-request",
+        },
+      },
+    });
+
+    const metricsResponse = await app.request(
+      "http://localhost/metrics",
+      undefined,
+      env,
+    );
+    expect(metricsResponse.status).toBe(200);
+    await expect(metricsResponse.json()).resolves.toMatchObject({
+      environment: "test",
+      service: "timetable-worker-admin",
+      errors: {
+        total: 4,
+        byCode: {
+          rate_limited: 1,
+          validation_error: 3,
+        },
+      },
+      rateLimits: {
+        total: 1,
+        byRule: {
+          "admin-invalid-request": 1,
+        },
+      },
+      requests: {
+        total: 3,
+        byStatus: {
+          "400": 2,
+          "429": 1,
+        },
+      },
+    });
   });
 });

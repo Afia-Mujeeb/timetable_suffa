@@ -8,8 +8,12 @@ import {
 import {
   AppError,
   isAppError,
-  type ErrorResponse,
 } from "../../shared/src/timetable/errors";
+import { createWorkerMetrics } from "../../shared/src/timetable/metrics";
+import {
+  createRateLimitGuard,
+  getClientIdentifier,
+} from "../../shared/src/timetable/rate-limit";
 import { TimetableQueryService } from "../../shared/src/timetable/services";
 
 type Bindings = {
@@ -19,18 +23,44 @@ type Bindings = {
 };
 
 type Variables = {
+  errorCode?: string;
+  errorType?: string;
   requestId: string;
+};
+
+type StructuredErrorResponse = {
+  error: {
+    code: string;
+    details?: {
+      limit: number;
+      retryAfterSeconds: number;
+      ruleName: string;
+    };
+    message: string;
+    requestId: string;
+  };
+};
+
+type AppDependencies = {
+  metrics?: ReturnType<typeof createWorkerMetrics>;
+  now?: () => number;
+  rateLimitGuard?: ReturnType<typeof createRateLimitGuard>;
 };
 
 const READ_CACHE_CONTROL = "public, max-age=60, s-maxage=300";
 
 function createStructuredErrorResponse(
   requestId: string,
-  error: AppError,
-): ErrorResponse {
+  error: {
+    code: string;
+    details?: StructuredErrorResponse["error"]["details"];
+    message: string;
+  },
+): StructuredErrorResponse {
   return {
     error: {
       code: error.code,
+      ...(error.details ? { details: error.details } : {}),
       message: error.message,
       requestId,
     },
@@ -63,30 +93,188 @@ function logEvent(payload: Record<string, unknown>): void {
   console.log(JSON.stringify(payload));
 }
 
-export function createApp(): Hono<{
+function createDefaultRateLimitGuard() {
+  return createRateLimitGuard([
+    {
+      blockMs: 60_000,
+      limit: 60,
+      name: "api-burst",
+      phase: "before",
+      when: (request) => request.path.startsWith("/v1/"),
+      windowMs: 60_000,
+    },
+    {
+      blockMs: 15 * 60_000,
+      limit: 12,
+      name: "api-invalid-request",
+      phase: "after",
+      matchStatus: (status) => status === 400 || status === 404,
+      when: (request) => request.path.startsWith("/v1/"),
+      windowMs: 5 * 60_000,
+    },
+  ]);
+}
+
+function createRateLimitResponse(
+  requestId: string,
+  decision: Exclude<
+    ReturnType<ReturnType<typeof createRateLimitGuard>["checkBefore"]>,
+    { limited: false }
+  >,
+) {
+  return createStructuredErrorResponse(requestId, {
+    code: "rate_limited",
+    details: {
+      limit: decision.limit,
+      retryAfterSeconds: decision.retryAfterSeconds,
+      ruleName: decision.ruleName ?? "unknown",
+    },
+    message: "Too many requests. Please retry later.",
+  });
+}
+
+export function createApp(
+  dependencies: AppDependencies = {},
+): Hono<{
   Bindings: Bindings;
   Variables: Variables;
 }> {
   const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
+  const metrics = dependencies.metrics ?? createWorkerMetrics();
+  const now = dependencies.now ?? (() => Date.now());
+  const rateLimitGuard =
+    dependencies.rateLimitGuard ?? createDefaultRateLimitGuard();
 
   app.use("*", async (context, next) => {
     const requestId = context.req.header("x-request-id") ?? crypto.randomUUID();
-    const startedAt = Date.now();
+    const startedAt = now();
+    const request = {
+      clientId: getClientIdentifier({
+        headers: context.req.raw.headers,
+        method: context.req.method,
+      }),
+      method: context.req.method,
+      path: context.req.path,
+    };
 
     context.set("requestId", requestId);
     context.header("x-request-id", requestId);
 
+    const preflightDecision = rateLimitGuard.checkBefore(request, startedAt);
+    if (preflightDecision.limited) {
+      const env = getBindings(context);
+      const response = context.json(
+        createRateLimitResponse(requestId, preflightDecision),
+        429,
+      );
+
+      response.headers.set(
+        "Retry-After",
+        String(preflightDecision.retryAfterSeconds),
+      );
+
+      metrics.recordRateLimit({
+        method: request.method,
+        path: request.path,
+        ruleName: preflightDecision.ruleName ?? "unknown",
+      });
+      metrics.recordError({
+        code: "rate_limited",
+        method: request.method,
+        path: request.path,
+        status: 429,
+        type: "RateLimitError",
+      });
+      metrics.recordRequest({
+        durationMs: now() - startedAt,
+        method: request.method,
+        path: request.path,
+        status: 429,
+      });
+
+      logEvent({
+        event: "request.rate_limited",
+        requestId,
+        method: request.method,
+        path: request.path,
+        status: 429,
+        ruleName: preflightDecision.ruleName ?? "unknown",
+        retryAfterSeconds: preflightDecision.retryAfterSeconds,
+        environment: env.API_ENV ?? "local",
+        worker: env.APP_NAME ?? "timetable-worker-api",
+      });
+
+      return response;
+    }
+
     await next();
 
     const env = getBindings(context);
+    const postResponseDecision = rateLimitGuard.checkAfter(
+      request,
+      context.res.status,
+      now(),
+    );
+    if (postResponseDecision.limited) {
+      const response = context.json(
+        createRateLimitResponse(requestId, postResponseDecision),
+        429,
+      );
+
+      response.headers.set(
+        "Retry-After",
+        String(postResponseDecision.retryAfterSeconds),
+      );
+      context.res = response;
+
+      metrics.recordRateLimit({
+        method: request.method,
+        path: request.path,
+        ruleName: postResponseDecision.ruleName ?? "unknown",
+      });
+      metrics.recordError({
+        code: "rate_limited",
+        method: request.method,
+        path: request.path,
+        status: 429,
+        type: "RateLimitError",
+      });
+
+      logEvent({
+        event: "request.rate_limited",
+        requestId,
+        method: request.method,
+        path: request.path,
+        status: 429,
+        ruleName: postResponseDecision.ruleName ?? "unknown",
+        retryAfterSeconds: postResponseDecision.retryAfterSeconds,
+        environment: env.API_ENV ?? "local",
+        worker: env.APP_NAME ?? "timetable-worker-api",
+      });
+    } else if (context.res.status >= 400 && !context.get("errorCode")) {
+      metrics.recordError({
+        code: context.get("errorCode") ?? `http_${String(context.res.status)}`,
+        method: request.method,
+        path: request.path,
+        status: context.res.status,
+        type: context.get("errorType") ?? "HttpError",
+      });
+    }
+
+    metrics.recordRequest({
+      durationMs: now() - startedAt,
+      method: request.method,
+      path: request.path,
+      status: context.res.status,
+    });
 
     logEvent({
       event: "request.completed",
       requestId,
-      method: context.req.method,
-      path: context.req.path,
+      method: request.method,
+      path: request.path,
       status: context.res.status,
-      durationMs: Date.now() - startedAt,
+      durationMs: now() - startedAt,
       environment: env.API_ENV ?? "local",
       worker: env.APP_NAME ?? "timetable-worker-api",
     });
@@ -97,15 +285,26 @@ export function createApp(): Hono<{
     const appError = isAppError(error)
       ? error
       : new AppError("internal_error", "Internal server error.");
+    const path = context.req.path;
+    const method = context.req.method;
 
     logEvent({
       event: "request.failed",
       requestId,
-      method: context.req.method,
-      path: context.req.path,
+      method,
+      path,
       status: appError.status,
       code: appError.code,
       message: appError.message,
+    });
+    context.set("errorCode", appError.code);
+    context.set("errorType", error instanceof Error ? error.name : "UnknownError");
+    metrics.recordError({
+      code: appError.code,
+      method,
+      path,
+      status: appError.status,
+      type: error instanceof Error ? error.name : "UnknownError",
     });
 
     return context.json(
@@ -116,6 +315,15 @@ export function createApp(): Hono<{
 
   app.notFound((context) => {
     const requestId = context.get("requestId");
+    context.set("errorCode", "not_found");
+    context.set("errorType", "RouteNotFound");
+    metrics.recordError({
+      code: "not_found",
+      method: context.req.method,
+      path: context.req.path,
+      status: 404,
+      type: "RouteNotFound",
+    });
     return context.json(
       createStructuredErrorResponse(
         requestId,
@@ -124,6 +332,14 @@ export function createApp(): Hono<{
       404,
     );
   });
+
+  app.get("/metrics", (context) =>
+    context.json({
+      environment: getBindings(context).API_ENV ?? "local",
+      service: getBindings(context).APP_NAME ?? "timetable-worker-api",
+      ...metrics.snapshot(),
+    }),
+  );
 
   app.get("/", (context) =>
     context.json(
