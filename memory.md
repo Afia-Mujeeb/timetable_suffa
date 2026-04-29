@@ -30,6 +30,14 @@ Last updated: 2026-04-29
 - Added a typed mobile data layer for the actual Sprint 2 Worker response shapes, including the HTTP client, DTO/domain models, selected-section state, `SharedPreferences` storage abstraction, and cache-backed repository fallbacks for section lists and timetables.
 - Added mobile tests covering app boot rendering, selected-section persistence, and Worker response decoding, plus project-specific run/build notes in `mobile/app/README.md`.
 
+## Sprint 4 outcome
+
+- Reworked `mobile/app` around an explicit section-first onboarding flow with a dedicated searchable picker screen, local selection persistence, and route gating so the main timetable experience is not entered until a section is chosen.
+- Replaced the Sprint 3 placeholder home experience with a student-facing `Today` screen that surfaces current class, next class, no-class-day states, stale-cache messaging, and refresh affordances, then added a separate `Week` screen for the full timetable grid by weekday.
+- Added reusable schedule-summary logic in `mobile/app/lib/features/home/home_schedule_summary.dart` so current/next class calculations are derived from the actual timetable slot times without timezone conversion hacks.
+- Expanded mobile tests with section-picker widget coverage, schedule-summary unit coverage, offline repository fallback coverage, and an updated app-shell widget test aligned to the new Sprint 4 flow.
+- Updated `mobile/app/README.md` to document the shipped Sprint 4 experience and current architecture boundaries.
+
 ## Verified toolchain on this machine
 
 - Git `2.54.0.windows.1`
@@ -61,6 +69,8 @@ Last updated: 2026-04-29
 - `cd mobile/app && flutter analyze`
 - `cd mobile/app && flutter test`
 - `cd mobile/app && flutter build web --release`
+- `cd mobile/app && $env:PATH='C:\Program Files\Git\cmd;' + $env:PATH; & 'C:\Users\PC\.puro\envs\stable\flutter\bin\flutter.bat' analyze`
+- `cd mobile/app && $env:PATH='C:\Program Files\Git\cmd;' + $env:PATH; & 'C:\Users\PC\.puro\envs\stable\flutter\bin\flutter.bat' test`
 - `pnpm --dir backend/worker-api test`
 - `pnpm --dir backend/worker-api typecheck`
 - `pnpm --dir backend/worker-api lint`

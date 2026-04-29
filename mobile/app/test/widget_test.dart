@@ -8,7 +8,7 @@ import "package:timetable_app/data/models/timetable_models.dart";
 import "package:timetable_app/data/storage/shared_preferences_app_storage.dart";
 
 void main() {
-  testWidgets("renders the section-first shell", (tester) async {
+  testWidgets("renders the sprint 4 today experience", (tester) async {
     SharedPreferences.setMockInitialValues({
       "selected_section_code": "BS-CS-2A",
     });
@@ -74,9 +74,11 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    expect(find.text("Section-first mobile foundation"), findsOneWidget);
-    expect(find.text("Section selection"), findsOneWidget);
+    expect(find.text("Today"), findsWidgets);
+    expect(find.text("Current and next"), findsOneWidget);
+    expect(find.text("Open week view"), findsOneWidget);
     expect(find.text("BS-CS-2A"), findsWidgets);
+    expect(find.text("Compiler Construction"), findsOneWidget);
   });
 }
 

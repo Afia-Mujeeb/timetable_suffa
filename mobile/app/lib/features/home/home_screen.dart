@@ -1,8 +1,10 @@
 import "package:flutter/material.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
+import "package:go_router/go_router.dart";
 import "package:timetable_app/core/providers/app_providers.dart";
 import "package:timetable_app/data/api/api_exception.dart";
 import "package:timetable_app/data/models/timetable_models.dart";
+import "package:timetable_app/features/home/home_schedule_summary.dart";
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -10,100 +12,115 @@ class HomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final sectionsAsync = ref.watch(sectionsProvider);
-    final selectedSectionCodeAsync = ref.watch(
-      selectedSectionCodeControllerProvider,
-    );
     final timetableAsync = ref.watch(selectedSectionTimetableProvider);
-
-    ref.watch(selectedSectionBootstrapProvider);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Timetable"),
+        title: const Text("Today"),
+        actions: [
+          IconButton(
+            tooltip: "Change section",
+            onPressed: () => context.go("/select-section"),
+            icon: const Icon(Icons.swap_horiz_rounded),
+          ),
+          IconButton(
+            tooltip: "Refresh",
+            onPressed: () => _refreshData(ref),
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
       ),
       body: RefreshIndicator(
-        onRefresh: () async {
-          ref.invalidate(sectionsProvider);
-          ref.invalidate(selectedSectionTimetableProvider);
-          await ref.read(sectionsProvider.future);
-        },
+        onRefresh: () => _refreshData(ref),
         child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 120),
           children: [
-            const _HeroCard(),
-            const SizedBox(height: 16),
-            sectionsAsync.when(
-              data: (snapshot) => _SectionSelectorCard(
-                snapshot: snapshot,
-                selectedSectionCode: selectedSectionCodeAsync.valueOrNull,
-              ),
-              loading: () => const _StateCard(
-                title: "Loading sections",
-                message:
-                    "Fetching the current section list from the Worker API.",
-                child: Padding(
-                  padding: EdgeInsets.only(top: 12),
-                  child: LinearProgressIndicator(minHeight: 6),
-                ),
-              ),
-              error: (error, stackTrace) => _ErrorStateCard(
-                title: "Could not load sections",
-                error: error,
-                onRetry: () => ref.invalidate(sectionsProvider),
-              ),
-            ),
-            const SizedBox(height: 16),
-            if (sectionsAsync.valueOrNull?.isStale == true)
-              _CacheBanner(
-                message: "Showing cached section data because the latest fetch failed.",
-                cachedAt: sectionsAsync.valueOrNull?.cachedAt,
-              ),
-            if (timetableAsync.valueOrNull?.isStale == true)
-              _CacheBanner(
-                message: "Showing cached timetable data because the latest fetch failed.",
-                cachedAt: timetableAsync.valueOrNull?.cachedAt,
-              ),
-            const SizedBox(height: 8),
             timetableAsync.when(
               data: (timetable) {
                 if (timetable == null) {
                   return const _StateCard(
                     title: "Choose a section",
                     message:
-                        "Pick a section above to load the timetable and warm the local cache.",
+                        "Pick a section to unlock the timetable, offline cache, and current class view.",
                   );
                 }
 
-                if (timetable.meetings.isEmpty) {
-                  return _StateCard(
-                    title: "No meetings scheduled",
-                    message:
-                        "The selected section is available, but it does not currently expose any class meetings.",
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 12),
-                      child: Text(
-                        timetable.section.sectionCode,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                    ),
-                  );
-                }
+                final now = DateTime.now();
+                final summary = buildHomeScheduleSummary(
+                  timetable: timetable,
+                  now: now,
+                );
 
-                return _TimetableView(timetable: timetable);
+                return _HeroCard(
+                  timetable: timetable,
+                  summary: summary,
+                  dayLabel: _dayLabelForWeekday(now.weekday),
+                );
               },
-              loading: () => const _StateCard(
+              loading: () => const _LoadingCard(
                 title: "Loading timetable",
-                message: "Fetching the latest meetings for the selected section.",
-                child: Padding(
-                  padding: EdgeInsets.only(top: 12),
-                  child: LinearProgressIndicator(minHeight: 6),
-                ),
+                message: "Checking the latest schedule for the selected section.",
               ),
               error: (error, stackTrace) => _ErrorStateCard(
                 title: "Could not load timetable",
                 error: error,
-                onRetry: () => ref.invalidate(selectedSectionTimetableProvider),
+                onRetry: () => _refreshData(ref),
               ),
+            ),
+            const SizedBox(height: 16),
+            if (sectionsAsync.valueOrNull?.isStale == true)
+              _CacheBanner(
+                icon: Icons.cloud_off_rounded,
+                message:
+                    "Showing cached section metadata because the latest refresh failed.",
+                cachedAt: sectionsAsync.valueOrNull?.cachedAt,
+              ),
+            if (timetableAsync.valueOrNull?.isStale == true)
+              _CacheBanner(
+                icon: Icons.wifi_off_rounded,
+                message:
+                    "Showing the last successful timetable sync because the backend is unreachable.",
+                cachedAt: timetableAsync.valueOrNull?.cachedAt,
+              ),
+            if (sectionsAsync.valueOrNull?.isStale == true ||
+                timetableAsync.valueOrNull?.isStale == true)
+              const SizedBox(height: 16),
+            timetableAsync.when(
+              data: (timetable) {
+                if (timetable == null) {
+                  return const SizedBox.shrink();
+                }
+
+                final now = DateTime.now();
+                final summary = buildHomeScheduleSummary(
+                  timetable: timetable,
+                  now: now,
+                );
+                final dayLabel = _dayLabelForWeekday(now.weekday);
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _CurrentAndNextCard(
+                      summary: summary,
+                      dayLabel: dayLabel,
+                    ),
+                    const SizedBox(height: 16),
+                    _TodayScheduleCard(
+                      summary: summary,
+                      dayLabel: dayLabel,
+                    ),
+                    const SizedBox(height: 16),
+                    _QuickActionsCard(sectionCode: timetable.section.sectionCode),
+                  ],
+                );
+              },
+              loading: () => const _LoadingCard(
+                title: "Preparing today",
+                message: "Building the current and upcoming class view.",
+              ),
+              error: (error, stackTrace) => const SizedBox.shrink(),
             ),
           ],
         ),
@@ -112,13 +129,33 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
-class _HeroCard extends ConsumerWidget {
-  const _HeroCard();
+Future<void> _refreshData(WidgetRef ref) async {
+  ref.invalidate(sectionsProvider);
+  ref.invalidate(selectedSectionTimetableProvider);
+
+  await Future.wait([
+    ref.read(sectionsProvider.future),
+    ref.read(selectedSectionTimetableProvider.future),
+  ]);
+}
+
+class _HeroCard extends StatelessWidget {
+  const _HeroCard({
+    required this.timetable,
+    required this.summary,
+    required this.dayLabel,
+  });
+
+  final SectionTimetable timetable;
+  final HomeScheduleSummary summary;
+  final String dayLabel;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final config = ref.watch(appConfigProvider);
-    final selectedSection = ref.watch(selectedSectionSummaryProvider).valueOrNull;
+  Widget build(BuildContext context) {
+    final version = timetable.timetableVersion;
+    final freshness = timetable.cachedAt == null
+        ? "Ready to sync"
+        : "Last sync ${_formatTimestamp(timetable.cachedAt!)}";
 
     return Card(
       child: Container(
@@ -139,14 +176,14 @@ class _HeroCard extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              "Section-first mobile foundation",
+              timetable.section.sectionCode,
               style: Theme.of(context).textTheme.displaySmall?.copyWith(
                     color: Colors.white,
                   ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             Text(
-              "Sprint 3 wires navigation, API access, and cache-backed timetable loading without leaking transport details into the UI.",
+              _heroHeadline(),
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                     color: const Color(0xFFF4FAF7),
                   ),
@@ -157,16 +194,17 @@ class _HeroCard extends ConsumerWidget {
               runSpacing: 10,
               children: [
                 _HeroBadge(
-                  label: "Flavor",
-                  value: config.appFlavor,
+                  label: "Today",
+                  value:
+                      "${summary.todayMeetings.length} ${summary.todayMeetings.length == 1 ? "class" : "classes"}",
                 ),
                 _HeroBadge(
-                  label: "API",
-                  value: config.apiBaseUrl,
+                  label: "Version",
+                  value: version.versionId,
                 ),
                 _HeroBadge(
-                  label: "Section",
-                  value: selectedSection?.sectionCode ?? "Awaiting selection",
+                  label: "Sync",
+                  value: freshness,
                 ),
               ],
             ),
@@ -174,6 +212,22 @@ class _HeroCard extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  String _heroHeadline() {
+    if (summary.currentMeeting != null) {
+      return "You are currently in ${summary.currentMeeting!.meeting.courseName}.";
+    }
+
+    if (summary.nextMeeting != null) {
+      return "Next up: ${summary.nextMeeting!.meeting.courseName} at ${summary.nextMeeting!.meeting.startTime}.";
+    }
+
+    if (summary.todayMeetings.isEmpty) {
+      return "No classes scheduled for $dayLabel.";
+    }
+
+    return "All classes for $dayLabel are complete.";
   }
 }
 
@@ -189,6 +243,7 @@ class _HeroBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      constraints: const BoxConstraints(minWidth: 110),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: const Color(0x1FFFFFFF),
@@ -217,95 +272,57 @@ class _HeroBadge extends StatelessWidget {
   }
 }
 
-class _SectionSelectorCard extends ConsumerWidget {
-  const _SectionSelectorCard({
-    required this.snapshot,
-    required this.selectedSectionCode,
+class _CurrentAndNextCard extends StatelessWidget {
+  const _CurrentAndNextCard({
+    required this.summary,
+    required this.dayLabel,
   });
 
-  final SectionsSnapshot snapshot;
-  final String? selectedSectionCode;
+  final HomeScheduleSummary summary;
+  final String dayLabel;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final selectedSection = snapshot.sections.where(
-      (section) => section.sectionCode == selectedSectionCode,
-    );
-    final summary = selectedSection.isEmpty ? null : selectedSection.first;
-
+  Widget build(BuildContext context) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Text(
+              "Current and next",
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 16),
             Row(
               children: [
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        "Section selection",
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        "Loaded ${snapshot.sections.length} sections from timetable version ${snapshot.timetableVersion.versionId}.",
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                    ],
+                  child: _StatusPanel(
+                    title: "Current",
+                    emptyLabel: summary.todayMeetings.isEmpty
+                        ? "No class today"
+                        : "No class right now",
+                    emptyDescription: summary.todayMeetings.isEmpty
+                        ? "No meetings are scheduled for $dayLabel."
+                        : "No active class in this slot.",
+                    meeting: summary.currentMeeting,
                   ),
                 ),
-                Chip(
-                  label: Text(snapshot.timetableVersion.publishStatus),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _StatusPanel(
+                    title: "Next",
+                    emptyLabel: summary.todayMeetings.isEmpty
+                        ? "Nothing upcoming today"
+                        : "Done for today",
+                    emptyDescription: summary.todayMeetings.isEmpty
+                        ? "No meetings are scheduled for $dayLabel."
+                        : "No additional classes remain today.",
+                    meeting: summary.nextMeeting,
+                  ),
                 ),
               ],
             ),
-            const SizedBox(height: 18),
-            DropdownButtonFormField<String>(
-              initialValue: selectedSectionCode,
-              items: snapshot.sections
-                  .map(
-                    (section) => DropdownMenuItem<String>(
-                      value: section.sectionCode,
-                      child: Text(section.sectionCode),
-                    ),
-                  )
-                  .toList(growable: false),
-              onChanged: (value) {
-                ref
-                    .read(selectedSectionCodeControllerProvider.notifier)
-                    .selectSection(value);
-              },
-              decoration: const InputDecoration(
-                labelText: "Active section",
-                hintText: "Choose a section",
-              ),
-            ),
-            if (summary != null) ...[
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  _InfoPill(
-                    icon: Icons.badge_outlined,
-                    label: summary.displayName,
-                  ),
-                  _InfoPill(
-                    icon: Icons.calendar_month_outlined,
-                    label: "${summary.meetingCount} meetings",
-                  ),
-                  _InfoPill(
-                    icon: summary.active
-                        ? Icons.check_circle_outline
-                        : Icons.pause_circle_outline,
-                    label: summary.active ? "Active" : "Inactive",
-                  ),
-                ],
-              ),
-            ],
           ],
         ),
       ),
@@ -313,86 +330,74 @@ class _SectionSelectorCard extends ConsumerWidget {
   }
 }
 
-class _TimetableView extends StatelessWidget {
-  const _TimetableView({
-    required this.timetable,
+class _StatusPanel extends StatelessWidget {
+  const _StatusPanel({
+    required this.title,
+    required this.emptyLabel,
+    required this.emptyDescription,
+    required this.meeting,
   });
 
-  final SectionTimetable timetable;
+  final String title;
+  final String emptyLabel;
+  final String emptyDescription;
+  final ScheduleMeetingOccurrence? meeting;
 
   @override
   Widget build(BuildContext context) {
-    final groupedMeetings = <DayKey, List<TimetableMeeting>>{};
-    for (final meeting in timetable.meetings) {
-      groupedMeetings.putIfAbsent(meeting.dayKey, () => <TimetableMeeting>[]);
-      groupedMeetings[meeting.dayKey]!.add(meeting);
-    }
+    final subtitleBits = <String>[
+      if (meeting?.meeting.room case final room? when room.isNotEmpty) room,
+      if (meeting?.meeting.online == true) "Online",
+      if (meeting?.meeting.meetingType case final type? when type.isNotEmpty)
+        type,
+    ];
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  timetable.section.sectionCode,
-                  style: Theme.of(context).textTheme.headlineMedium,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  timetable.section.displayName,
-                  style: Theme.of(context).textTheme.bodyLarge,
-                ),
-                const SizedBox(height: 16),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    _InfoPill(
-                      icon: Icons.event_note_outlined,
-                      label:
-                          "${timetable.timetableVersion.meetingCount} total meetings in version",
-                    ),
-                    _InfoPill(
-                      icon: Icons.warning_amber_outlined,
-                      label:
-                          "${timetable.timetableVersion.warningCount} import warnings",
-                    ),
-                    _InfoPill(
-                      icon: Icons.inventory_2_outlined,
-                      label: timetable.timetableVersion.sourceFileName,
-                    ),
-                  ],
-                ),
-              ],
-            ),
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAF7),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: Theme.of(context).textTheme.labelLarge,
           ),
-        ),
-        const SizedBox(height: 16),
-        for (final day in DayKey.values)
-          if (groupedMeetings.containsKey(day)) ...[
-            _DayScheduleCard(
-              day: day,
-              meetings: groupedMeetings[day]!,
+          const SizedBox(height: 8),
+          Text(
+            meeting?.meeting.courseName ?? emptyLabel,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            meeting == null
+                ? emptyDescription
+                : "${meeting!.meeting.startTime} - ${meeting!.meeting.endTime}",
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          if (subtitleBits.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              subtitleBits.join(" • "),
+              style: Theme.of(context).textTheme.bodyMedium,
             ),
-            const SizedBox(height: 12),
           ],
-      ],
+        ],
+      ),
     );
   }
 }
 
-class _DayScheduleCard extends StatelessWidget {
-  const _DayScheduleCard({
-    required this.day,
-    required this.meetings,
+class _TodayScheduleCard extends StatelessWidget {
+  const _TodayScheduleCard({
+    required this.summary,
+    required this.dayLabel,
   });
 
-  final DayKey day;
-  final List<TimetableMeeting> meetings;
+  final HomeScheduleSummary summary;
+  final String dayLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -406,20 +411,84 @@ class _DayScheduleCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    day.label,
+                    "$dayLabel schedule",
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                 ),
                 Chip(
-                  label: Text("${meetings.length} classes"),
+                  label: Text(
+                    "${summary.todayMeetings.length} ${summary.todayMeetings.length == 1 ? "class" : "classes"}",
+                  ),
                 ),
               ],
             ),
             const SizedBox(height: 14),
-            for (var index = 0; index < meetings.length; index++) ...[
-              _MeetingTile(meeting: meetings[index]),
-              if (index < meetings.length - 1) const Divider(height: 24),
-            ],
+            if (summary.todayMeetings.isEmpty)
+              const _StateMessage(
+                message:
+                    "No classes are scheduled today. Use the week view to scan the rest of the timetable.",
+              )
+            else
+              for (var index = 0; index < summary.todayMeetings.length; index++)
+                ...[
+                  _MeetingTile(
+                    occurrence: summary.todayMeetings[index],
+                    highlightCurrent:
+                        summary.currentMeeting == summary.todayMeetings[index],
+                    highlightNext:
+                        summary.nextMeeting == summary.todayMeetings[index],
+                  ),
+                  if (index < summary.todayMeetings.length - 1)
+                    const Divider(height: 24),
+                ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _QuickActionsCard extends StatelessWidget {
+  const _QuickActionsCard({
+    required this.sectionCode,
+  });
+
+  final String sectionCode;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              "Next steps",
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "Review the full week, switch sections, or refresh when the department publishes a new timetable version.",
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                FilledButton.tonalIcon(
+                  onPressed: () => context.go("/week"),
+                  icon: const Icon(Icons.grid_view_rounded),
+                  label: const Text("Open week view"),
+                ),
+                FilledButton.tonalIcon(
+                  onPressed: () => context.go("/select-section"),
+                  icon: const Icon(Icons.swap_horizontal_circle_outlined),
+                  label: Text("Change $sectionCode"),
+                ),
+              ],
+            ),
           ],
         ),
       ),
@@ -429,138 +498,123 @@ class _DayScheduleCard extends StatelessWidget {
 
 class _MeetingTile extends StatelessWidget {
   const _MeetingTile({
-    required this.meeting,
+    required this.occurrence,
+    required this.highlightCurrent,
+    required this.highlightNext,
   });
 
-  final TimetableMeeting meeting;
+  final ScheduleMeetingOccurrence occurrence;
+  final bool highlightCurrent;
+  final bool highlightNext;
 
   @override
   Widget build(BuildContext context) {
     final subtitleBits = <String>[
-      if (meeting.instructor != null && meeting.instructor!.isNotEmpty)
-        meeting.instructor!,
-      if (meeting.room != null && meeting.room!.isNotEmpty)
-        meeting.room!,
-      if (meeting.online) "Online",
-      if (meeting.meetingType != null && meeting.meetingType!.isNotEmpty)
-        meeting.meetingType!,
+      if (occurrence.meeting.instructor != null &&
+          occurrence.meeting.instructor!.isNotEmpty)
+        occurrence.meeting.instructor!,
+      if (occurrence.meeting.room != null &&
+          occurrence.meeting.room!.isNotEmpty)
+        occurrence.meeting.room!,
+      if (occurrence.meeting.online) "Online",
+      if (occurrence.meeting.meetingType != null &&
+          occurrence.meeting.meetingType!.isNotEmpty)
+        occurrence.meeting.meetingType!,
     ];
 
-    return Column(
+    final accent = highlightCurrent
+        ? const Color(0xFF174A41)
+        : highlightNext
+            ? const Color(0xFF6B4E16)
+            : const Color(0xFFEAF2EE);
+    final textColor = highlightCurrent || highlightNext
+        ? Colors.white
+        : Theme.of(context).textTheme.titleMedium?.color;
+
+    return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 86,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: const Color(0xFFEAF2EE),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    meeting.startTime,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  Text(
-                    meeting.endTime,
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    meeting.courseName,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  if (subtitleBits.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      subtitleBits.join(" • "),
-                      style: Theme.of(context).textTheme.bodyMedium,
+        Container(
+          width: 94,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: accent,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                occurrence.meeting.startTime,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: textColor,
                     ),
-                  ],
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      Chip(
-                        label: Text("Page ${meeting.sourcePage}"),
-                      ),
-                      Chip(
-                        label: Text(meeting.confidenceClass),
-                      ),
-                      for (final warning in meeting.warnings)
-                        Chip(
-                          label: Text(warning),
-                        ),
-                    ],
+              ),
+              Text(
+                occurrence.meeting.endTime,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: highlightCurrent || highlightNext
+                          ? const Color(0xFFF7FBF9)
+                          : null,
+                    ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text(
+                    occurrence.meeting.courseName,
+                    style: Theme.of(context).textTheme.titleMedium,
                   ),
+                  if (highlightCurrent)
+                    const Chip(
+                      label: Text("Current"),
+                    ),
+                  if (highlightNext)
+                    const Chip(
+                      label: Text("Next"),
+                    ),
                 ],
               ),
-            ),
-          ],
+              if (subtitleBits.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  subtitleBits.join(" • "),
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ],
+            ],
+          ),
         ),
       ],
     );
   }
 }
 
-class _InfoPill extends StatelessWidget {
-  const _InfoPill({
-    required this.icon,
-    required this.label,
-  });
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF5F8F5),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: Theme.of(context).colorScheme.primary),
-          const SizedBox(width: 8),
-          Text(
-            label,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _CacheBanner extends StatelessWidget {
   const _CacheBanner({
+    required this.icon,
     required this.message,
     required this.cachedAt,
   });
 
+  final IconData icon;
   final String message;
   final String? cachedAt;
 
   @override
   Widget build(BuildContext context) {
+    final freshness = cachedAt == null ? null : _formatTimestamp(cachedAt!);
+
     return Card(
       color: const Color(0xFFFFF6E7),
       child: Padding(
@@ -568,14 +622,13 @@ class _CacheBanner extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(
-              Icons.wifi_off_rounded,
-              color: Theme.of(context).colorScheme.primary,
-            ),
+            Icon(icon, color: Theme.of(context).colorScheme.primary),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                cachedAt == null ? message : "$message Cached at $cachedAt.",
+                freshness == null
+                    ? message
+                    : "$message Cached at $freshness.",
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
             ),
@@ -599,20 +652,56 @@ class _ErrorStateCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final message = error is ApiException
-        ? (error as ApiException).message
-        : "An unexpected error interrupted the request.";
+    final message = switch (error) {
+      ApiException(statusCode: _, code: "not_found", message: _) =>
+        "The selected section is not present in the published timetable anymore.",
+      ApiException(statusCode: _, code: _, message: final message) => message,
+      _ => "An unexpected error interrupted the request.",
+    };
 
     return _StateCard(
       title: title,
       message: message,
       child: Padding(
         padding: const EdgeInsets.only(top: 16),
-        child: FilledButton.icon(
-          onPressed: onRetry,
-          icon: const Icon(Icons.refresh),
-          label: const Text("Retry"),
+        child: Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            FilledButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh),
+              label: const Text("Retry"),
+            ),
+            FilledButton.tonalIcon(
+              onPressed: () => context.go("/select-section"),
+              icon: const Icon(Icons.swap_horiz_rounded),
+              label: const Text("Change section"),
+            ),
+          ],
         ),
+      ),
+    );
+  }
+}
+
+class _LoadingCard extends StatelessWidget {
+  const _LoadingCard({
+    required this.title,
+    required this.message,
+  });
+
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return _StateCard(
+      title: title,
+      message: message,
+      child: const Padding(
+        padding: EdgeInsets.only(top: 12),
+        child: LinearProgressIndicator(minHeight: 6),
       ),
     );
   }
@@ -652,4 +741,65 @@ class _StateCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _StateMessage extends StatelessWidget {
+  const _StateMessage({
+    required this.message,
+  });
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      message,
+      style: Theme.of(context).textTheme.bodyMedium,
+    );
+  }
+}
+
+String _dayLabelForWeekday(int weekday) {
+  return switch (weekday) {
+    DateTime.monday => "Monday",
+    DateTime.tuesday => "Tuesday",
+    DateTime.wednesday => "Wednesday",
+    DateTime.thursday => "Thursday",
+    DateTime.friday => "Friday",
+    DateTime.saturday => "Saturday",
+    _ => "Sunday",
+  };
+}
+
+String _formatTimestamp(String iso8601) {
+  final timestamp = DateTime.tryParse(iso8601);
+  if (timestamp == null) {
+    return iso8601;
+  }
+
+  final local = timestamp.toLocal();
+  final month = switch (local.month) {
+    1 => "Jan",
+    2 => "Feb",
+    3 => "Mar",
+    4 => "Apr",
+    5 => "May",
+    6 => "Jun",
+    7 => "Jul",
+    8 => "Aug",
+    9 => "Sep",
+    10 => "Oct",
+    11 => "Nov",
+    _ => "Dec",
+  };
+
+  final hour = local.hour == 0
+      ? 12
+      : local.hour > 12
+          ? local.hour - 12
+          : local.hour;
+  final minute = local.minute.toString().padLeft(2, "0");
+  final suffix = local.hour >= 12 ? "PM" : "AM";
+
+  return "${local.day} $month, $hour:$minute $suffix";
 }

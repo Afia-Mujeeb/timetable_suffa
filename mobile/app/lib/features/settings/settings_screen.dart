@@ -1,5 +1,6 @@
 import "package:flutter/material.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
+import "package:go_router/go_router.dart";
 import "package:timetable_app/core/providers/app_providers.dart";
 
 class SettingsScreen extends ConsumerWidget {
@@ -70,6 +71,12 @@ class SettingsScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: 16),
                   FilledButton.icon(
+                    onPressed: () => context.go("/select-section"),
+                    icon: const Icon(Icons.swap_horiz_rounded),
+                    label: const Text("Change section"),
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
                     onPressed: () async {
                       await ref.read(appStorageProvider).clear();
                       ref.invalidate(selectedSectionCodeControllerProvider);
@@ -83,6 +90,7 @@ class SettingsScreen extends ConsumerWidget {
                             content: Text("Local cache cleared."),
                           ),
                         );
+                        context.go("/select-section");
                       }
                     },
                     icon: const Icon(Icons.delete_sweep_outlined),

@@ -43,28 +43,6 @@ final selectedSectionCodeControllerProvider =
       SelectedSectionCodeController.new,
     );
 
-final selectedSectionBootstrapProvider = FutureProvider<void>((ref) async {
-  final sections = await ref.watch(sectionsProvider.future);
-  final selectedSectionCode = await ref.watch(
-    selectedSectionCodeControllerProvider.future,
-  );
-
-  if (sections.sections.isEmpty) {
-    return;
-  }
-
-  final hasSelection = selectedSectionCode != null &&
-      sections.sections.any(
-        (section) => section.sectionCode == selectedSectionCode,
-      );
-
-  if (!hasSelection) {
-    await ref
-        .read(selectedSectionCodeControllerProvider.notifier)
-        .selectSection(sections.sections.first.sectionCode);
-  }
-});
-
 final selectedSectionSummaryProvider =
     Provider<AsyncValue<SectionSummary?>>((ref) {
       final sectionsAsync = ref.watch(sectionsProvider);
@@ -90,7 +68,6 @@ final selectedSectionSummaryProvider =
 
 final selectedSectionTimetableProvider =
     FutureProvider<SectionTimetable?>((ref) async {
-      await ref.watch(selectedSectionBootstrapProvider.future);
       final selectedSectionCode = await ref.watch(
         selectedSectionCodeControllerProvider.future,
       );
@@ -117,6 +94,5 @@ class SelectedSectionCodeController extends AsyncNotifier<String?> {
   Future<void> selectSection(String? sectionCode) async {
     state = AsyncValue.data(sectionCode);
     await ref.watch(appStorageProvider).writeSelectedSectionCode(sectionCode);
-    ref.invalidate(selectedSectionTimetableProvider);
   }
 }

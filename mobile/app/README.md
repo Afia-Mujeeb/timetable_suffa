@@ -1,15 +1,22 @@
 # Timetable Mobile App
 
-Flutter 3 client foundation for the timetable rewrite.
+Flutter 3 client for the timetable rewrite.
 
-## What Sprint 3 Added
+## What Sprint 4 Delivers
 
-- a full Flutter multi-platform scaffold under `mobile/app`
-- Riverpod-based dependency wiring and selected-section state
-- GoRouter app shell with timetable and settings routes
-- typed Worker API client for Sprint 2 section and timetable endpoints
-- `SharedPreferences` storage for selected section, last seen version, and cached payloads
-- cache-backed repository behavior so the UI can fall back to stale data when the latest fetch fails
+- explicit section-first onboarding with searchable selection and local persistence
+- a gated app flow that keeps students out of the main timetable experience until a section is chosen
+- a `Today` screen with current class, next class, no-class-day handling, and stale-cache messaging
+- a dedicated `Week` screen that preserves the timetable’s day/slot structure instead of forcing a generic calendar
+- cache-backed Worker API reads so previously fetched sections and timetables still load when connectivity is poor
+- settings actions for changing section and clearing local cache
+
+## Architecture Notes
+
+- Riverpod owns runtime config, storage, API client, and selected-section state
+- GoRouter splits onboarding from the selected-section shell
+- `SharedPreferences` stores the selected section, last seen version, cached section list, and cached section timetables
+- schedule summary logic for today/current/next calculations lives in `lib/features/home/home_schedule_summary.dart`
 
 ## Runtime Configuration
 
@@ -33,5 +40,4 @@ For Android emulators, replace `127.0.0.1` with `10.0.2.2` when targeting a loca
 flutter pub get
 flutter analyze
 flutter test
-flutter build web --release
 ```
