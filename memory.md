@@ -23,6 +23,13 @@ Last updated: 2026-04-29
 - Updated both Wrangler configs to bind the shared `TIMETABLE_DB` D1 database and point at `backend/shared/migrations`, then refreshed the OpenAPI contracts in `contracts/openapi/worker-api.openapi.yaml` and `contracts/openapi/worker-admin.openapi.yaml`.
 - Added backend tests covering migration smoke, fixture import, repository hot-path timetable queries, service response assembly, route validation failures, and admin import/publish behavior.
 
+## Sprint 3 outcome
+
+- Recreated `mobile/app` as a full Flutter 3 multi-platform project with Android, iOS, web, Windows, Linux, and macOS scaffolds, then replaced the placeholder shell with the new section-first mobile foundation.
+- Added a Riverpod- and GoRouter-based app shell with a custom theme, timetable and settings routes, explicit loading/error/empty states, and a first timetable-focused UI that consumes the new backend contract instead of any legacy PHP flow.
+- Added a typed mobile data layer for the actual Sprint 2 Worker response shapes, including the HTTP client, DTO/domain models, selected-section state, `SharedPreferences` storage abstraction, and cache-backed repository fallbacks for section lists and timetables.
+- Added mobile tests covering app boot rendering, selected-section persistence, and Worker response decoding, plus project-specific run/build notes in `mobile/app/README.md`.
+
 ## Verified toolchain on this machine
 
 - Git `2.54.0.windows.1`
@@ -40,6 +47,7 @@ Last updated: 2026-04-29
 - Android Studio is installed, but Android SDK setup and license acceptance still need to be completed before `flutter doctor` is fully green for Android.
 - The golden parser artifact still carries one known warning: `normalized_domain/meetings/160: missing room on non-online meeting`, which corresponds to `BS-CS-MISC 3` page `25` where the source PDF does not show a room line for `Computer Networks`.
 - The backend Workers now expect a real shared D1 database binding and, for protected admin writes, a real `IMPORT_SHARED_SECRET`; the committed Wrangler configs still use placeholder Cloudflare database IDs.
+- The mobile app defaults to `http://127.0.0.1:8787`; real runs still need the correct `API_BASE_URL` via `--dart-define`, and Android emulator runs should use `10.0.2.2` for a local Worker.
 
 ## Verification commands that passed
 
@@ -50,8 +58,9 @@ Last updated: 2026-04-29
 - `python -m pytest tools/pdf_parser`
 - `python -m pdf_parser parse --input "C:\Users\PC\Downloads\26 april sp26 CS DEPARTMENT (4days sec wise).pdf" --output "E:\timetable\tools\pdf_parser\fixtures\golden\spring-2026-2026-04-26.json"`
 - `python -m pdf_parser validate --input "E:\timetable\tools\pdf_parser\fixtures\golden\spring-2026-2026-04-26.json"`
-- `flutter analyze`
-- `flutter test`
+- `cd mobile/app && flutter analyze`
+- `cd mobile/app && flutter test`
+- `cd mobile/app && flutter build web --release`
 - `pnpm --dir backend/worker-api test`
 - `pnpm --dir backend/worker-api typecheck`
 - `pnpm --dir backend/worker-api lint`

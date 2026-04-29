@@ -1,59 +1,25 @@
-import "package:flutter/material.dart";
+import "package:flutter/widgets.dart";
+import "package:flutter_riverpod/flutter_riverpod.dart";
+import "package:shared_preferences/shared_preferences.dart";
+import "package:timetable_app/app/timetable_app.dart";
+import "package:timetable_app/core/config/app_config.dart";
+import "package:timetable_app/core/providers/app_providers.dart";
+import "package:timetable_app/data/storage/shared_preferences_app_storage.dart";
 
-void main() {
-  runApp(const TimetableApp());
-}
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
 
-class TimetableApp extends StatelessWidget {
-  const TimetableApp({super.key});
+  final preferences = await SharedPreferences.getInstance();
+  final config = AppConfig.fromEnvironment();
+  final storage = SharedPreferencesAppStorage(preferences);
 
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: "Timetable",
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF0B6E4F)),
-        useMaterial3: true,
-      ),
-      home: const TimetableHomePage(),
-    );
-  }
-}
-
-class TimetableHomePage extends StatelessWidget {
-  const TimetableHomePage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("Timetable bootstrap"),
-      ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: Card(
-            margin: const EdgeInsets.all(24),
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: const [
-                  Text(
-                    "Flutter shell ready",
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
-                  ),
-                  SizedBox(height: 12),
-                  Text(
-                    "Connect this package to the Workers API and timetable import flow in later sprints.",
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  runApp(
+    ProviderScope(
+      overrides: [
+        appConfigProvider.overrideWithValue(config),
+        appStorageProvider.overrideWithValue(storage),
+      ],
+      child: const TimetableApp(),
+    ),
+  );
 }
